@@ -31,11 +31,6 @@ implementation("com.touchque:touchque-spring-boot-starter:5.0.0")   // Spring Bo
 implementation("com.touchque:touchque-java:5.0.0")                  // anything else
 ```
 
-> **Not on Maven Central yet.** Until it is, run `mvn -DskipTests install` in a clone of
-> [this repository](https://github.com/Touchque/touchque-java). Maven then finds the artifacts in your local repository
-> (`~/.m2/repository`); Gradle reads it only when the build names it, so add `mavenLocal()` to `repositories { }`
-> (before `mavenCentral()`) until then.
-
 ## Setup
 
 Get an API key and secret from your [Touchque dashboard](https://dashboard.touchque.com):
