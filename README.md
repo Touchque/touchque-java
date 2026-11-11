@@ -31,7 +31,7 @@ implementation("com.touchque:touchque-spring-boot-starter:5.0.0")   // Spring Bo
 implementation("com.touchque:touchque-java:5.0.0")                  // anything else
 ```
 
-> **Not on Maven Central yet.** Until it is, run `mvn install` in a clone of
+> **Not on Maven Central yet.** Until it is, run `mvn -DskipTests install` in a clone of
 > [this repository](https://github.com/Touchque/touchque-java); the dependency then resolves from your local repository.
 
 ## Setup
