@@ -3,12 +3,12 @@ package com.touchque.login;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueOptions;
+import com.touchque.TouchqueOptions;
 import com.touchque.crypto.Jws;
 import com.touchque.internal.Base64Url;
 import com.touchque.internal.Crypto;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -32,10 +32,10 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * TouchQue Login (hosted sign-in) for your app: an OpenID Connect client for your tenant. PKCE
+ * Touchque Login (hosted sign-in) for your app: an OpenID Connect client for your tenant. PKCE
  * (S256) is always used. ID tokens are checked against the tenant's JWKS (RS256, issuer,
  * audience, expiry, nonce, at_hash). Your API checks access tokens with
- * {@link #verifyAccessToken}. In Spring Boot, the TouchQue starter wires the routes for you.
+ * {@link #verifyAccessToken}. In Spring Boot, the Touchque starter wires the routes for you.
  *
  * <pre>{@code
  * var login = new HostedLogin(new HostedLogin.Options("acme.login.touchque.com", "…").clientSecret("…").redirectUri("https://app/callback"));
@@ -47,7 +47,7 @@ public final class HostedLogin {
     /** requested_token_type for the token vault ({@link #getConnectionToken}). */
     public static final String CONNECTION_TOKEN_TYPE = "urn:touchque:params:oauth:token-type:connection-access-token";
 
-    static final HttpClient SHARED_CLIENT = TouchQueHttp.createClient(Duration.ofSeconds(10));
+    static final HttpClient SHARED_CLIENT = TouchqueHttp.createClient(Duration.ofSeconds(10));
 
     private final Options o;
     private final String issuer;
@@ -302,7 +302,7 @@ public final class HostedLogin {
         } catch (IllegalArgumentException e) {
             host = null;
         }
-        if (host == null || !(TouchQueOptions.isLoopback(host) || host.toLowerCase(Locale.ROOT).endsWith(".localhost"))) {
+        if (host == null || !(TouchqueOptions.isLoopback(host) || host.toLowerCase(Locale.ROOT).endsWith(".localhost"))) {
             throw new HostedLoginException("config", "Refusing a plaintext http:// domain for \"" + (host != null ? host : raw)
                     + "\". Codes, tokens and the client secret would be sent in the clear: use https://.");
         }
@@ -357,7 +357,7 @@ public final class HostedLogin {
             if (e.getValue() == null || e.getValue().isEmpty()) continue;
             if (!first) url.append('&');
             first = false;
-            url.append(TouchQueHttp.seg(e.getKey())).append('=').append(TouchQueHttp.seg(e.getValue()));
+            url.append(TouchqueHttp.seg(e.getKey())).append('=').append(TouchqueHttp.seg(e.getValue()));
         }
         return new AuthorizationRequest(url.toString(), state, nonce, verifier);
     }
@@ -440,7 +440,7 @@ public final class HostedLogin {
 
     /**
      * Token vault: the provider's own access token (Google, Microsoft, GitHub…) for the signed-in
-     * user, from a connection that stores tokens. TouchQue refreshes it; the refresh token never
+     * user, from a connection that stores tokens. Touchque refreshes it; the refresh token never
      * leaves. invalid_grant: the user has not signed in with the connection since it started
      * storing tokens, or they stopped app access.
      */
@@ -497,10 +497,10 @@ public final class HostedLogin {
 
     public String logoutUrl(String idTokenHint, String postLogoutRedirectUri, String state) {
         List<String> p = new ArrayList<>();
-        p.add("client_id=" + TouchQueHttp.seg(o.clientId));
-        if (idTokenHint != null && !idTokenHint.isEmpty()) p.add("id_token_hint=" + TouchQueHttp.seg(idTokenHint));
-        if (postLogoutRedirectUri != null && !postLogoutRedirectUri.isEmpty()) p.add("post_logout_redirect_uri=" + TouchQueHttp.seg(postLogoutRedirectUri));
-        if (state != null && !state.isEmpty()) p.add("state=" + TouchQueHttp.seg(state));
+        p.add("client_id=" + TouchqueHttp.seg(o.clientId));
+        if (idTokenHint != null && !idTokenHint.isEmpty()) p.add("id_token_hint=" + TouchqueHttp.seg(idTokenHint));
+        if (postLogoutRedirectUri != null && !postLogoutRedirectUri.isEmpty()) p.add("post_logout_redirect_uri=" + TouchqueHttp.seg(postLogoutRedirectUri));
+        if (state != null && !state.isEmpty()) p.add("state=" + TouchqueHttp.seg(state));
         return issuer + "/oidc/logout?" + String.join("&", p);
     }
 
@@ -592,7 +592,7 @@ public final class HostedLogin {
         req.timeout(Duration.ofSeconds(10)).header("Accept", "application/json");
         try {
             HttpResponse<InputStream> res = client.send(req.build(), HttpResponse.BodyHandlers.ofInputStream());
-            return new Answer(res.statusCode(), TouchQueHttp.readLimited(res.body()));
+            return new Answer(res.statusCode(), TouchqueHttp.readLimited(res.body()));
         } catch (IOException e) {
             throw new HostedLoginException("network_error", e.getMessage());
         } catch (InterruptedException e) {

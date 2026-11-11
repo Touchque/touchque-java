@@ -69,7 +69,7 @@ public final class RelayOptions<T> {
 
     /**
      * Silent sign-ins for /login (default off): a new sign-in whose browser sent its device-bound key
-     * proof (X-TouchQue-Browser) first asks TouchQue whether anything about it is new; if nothing is,
+     * proof (X-Touchque-Browser) first asks Touchque whether anything about it is new; if nothing is,
      * it succeeds at once with no push.
      */
     public RelayOptions<T> silentSignIn(Guard.SilentSignIn v) {

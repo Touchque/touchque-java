@@ -31,7 +31,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
-/** TouchQue Login through Spring Security: sign-in with PKCE from two properties, and the resource server's decoder. */
+/** Touchque Login through Spring Security: sign-in with PKCE from two properties, and the resource server's decoder. */
 @SpringBootTest(classes = LoginApp.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
     "touchque.login.domain=acme.login.touchque.com", "touchque.login.client-id=client-123", "touchque.login.client-secret=s3cret",
     "touchque.login.audience=https://api.acme.test"})
@@ -49,7 +49,7 @@ class LoginTest {
     }
 
     @Test
-    void pagesSignInWithTouchQueUsingPkce() throws Exception {
+    void pagesSignInWithTouchqueUsingPkce() throws Exception {
         HttpResponse<String> page = get("/me");
         assertEquals(302, page.statusCode());
         assertTrue(page.headers().firstValue("Location").orElse("").endsWith("/oauth2/authorization/touchque"));
@@ -89,7 +89,7 @@ class LoginTest {
         server.start();
         try {
             String issuer = "http://127.0.0.1:" + server.getAddress().getPort();
-            JwtDecoder decoder = TouchQueResourceServerConfiguration.jwtDecoder(issuer, "https://api.acme.test");
+            JwtDecoder decoder = TouchqueResourceServerConfiguration.jwtDecoder(issuer, "https://api.acme.test");
             long now = Instant.now().getEpochSecond();
             String good = jwt(key, "at+jwt", Map.of("iss", issuer, "sub", "usr_1", "aud", java.util.List.of("https://api.acme.test"), "exp", now + 300, "iat", now, "scope", "read:orders"));
             assertEquals("usr_1", decoder.decode(good).getSubject());

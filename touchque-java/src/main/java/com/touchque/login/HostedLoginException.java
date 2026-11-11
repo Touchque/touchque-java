@@ -1,9 +1,9 @@
 package com.touchque.login;
 
-import com.touchque.TouchQueException;
+import com.touchque.TouchqueException;
 
 /** A sign-in or token check failed; {@link #errorCode()} is machine-readable. */
-public class HostedLoginException extends TouchQueException {
+public class HostedLoginException extends TouchqueException {
     private final String errorCode;
     private final String description;
     private final Integer status;

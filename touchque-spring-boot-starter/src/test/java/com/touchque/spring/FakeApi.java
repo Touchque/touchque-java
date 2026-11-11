@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/** The shared Node fake TouchQue API (testing/fake-touchque-api.mjs), one per test run. */
+/** The shared Node fake Touchque API (testing/fake-touchque-api.mjs), one per test run. */
 final class FakeApi {
     private static FakeApi shared;
     final String baseUrl;

@@ -5,12 +5,12 @@
   <parent>
     <groupId>com.touchque</groupId>
     <artifactId>touchque-java-parent</artifactId>
-    <version>4.2.0</version>
+    <version>5.0.0</version>
   </parent>
 
   <artifactId>touchque-java</artifactId>
-  <name>TouchQue Java SDK</name>
-  <description>Push approvals with number matching, passkeys, silent sign-ins, offline codes, verified webhooks, TouchQue Actions, AI agent approvals, TouchQue Login and the Mobile SDK's server side. Java 17+, java.net.http and Jackson.</description>
+  <name>Touchque Java SDK</name>
+  <description>Push approvals with number matching, passkeys, silent sign-ins, offline codes, verified webhooks, Touchque Actions, AI agent approvals, Touchque Login and the Mobile SDK's server side. Java 17+, java.net.http and Jackson.</description>
 
   <dependencies>
     <dependency>

@@ -17,7 +17,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** TouchQue Actions: every management call sends exactly what fixtures/actions-api-vectors.json says. */
+/** Touchque Actions: every management call sends exactly what fixtures/actions-api-vectors.json says. */
 class ActionsTest {
     private final Support.FakeApi api = Support.FakeApi.get();
 
@@ -33,7 +33,7 @@ class ActionsTest {
         return out;
     }
 
-    private static JsonNode call(TouchQueClient tq, String name, JsonNode a) {
+    private static JsonNode call(TouchqueClient tq, String name, JsonNode a) {
         Actions acts = tq.actions();
         return switch (name) {
             case "deploy" -> acts.deploy(Json.str(a, "slug"), new Actions.DeployOptions().trigger(Json.str(a, "trigger")).code(Json.str(a, "code"))
@@ -74,7 +74,7 @@ class ActionsTest {
 
     @Test
     void actionsApiVectors() {
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         for (JsonNode v : Support.fixture("actions-api-vectors.json").get("calls")) {
             String name = v.get("name").asText();
             JsonNode result = call(tq, name, v.get("args"));
@@ -102,7 +102,7 @@ class ActionsTest {
 
     @Test
     void looseningVersionWaitsForThePhone() {
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         JsonNode res = tq.actions().deploy("silent-office", new Actions.DeployOptions().trigger("risk.check")
                 .code("exports.onExecute = (e, api) => api.allowSilent(\"office\");").capabilities(List.of("allow_silent")));
         assertFalse(res.get("deployed").asBoolean());
@@ -113,11 +113,11 @@ class ActionsTest {
 
     @Test
     void badInputIsRefusedBeforeAnyRequest() {
-        TouchQueClient tq = api.client();
-        assertThrows(TouchQueConfigException.class, () -> tq.actions().deploy("Bad Slug", new Actions.DeployOptions().trigger("login.request").code("x")));
-        assertThrows(TouchQueConfigException.class, () -> tq.actions().deploy("no-code", new Actions.DeployOptions().trigger("login.request")));
-        assertThrows(TouchQueConfigException.class, () -> tq.actions().secrets().set("lowercase", "v"));
-        assertThrows(TouchQueConfigException.class, () -> tq.actions().renderTemplate("Bad-Id", "login.request", null));
+        TouchqueClient tq = api.client();
+        assertThrows(TouchqueConfigException.class, () -> tq.actions().deploy("Bad Slug", new Actions.DeployOptions().trigger("login.request").code("x")));
+        assertThrows(TouchqueConfigException.class, () -> tq.actions().deploy("no-code", new Actions.DeployOptions().trigger("login.request")));
+        assertThrows(TouchqueConfigException.class, () -> tq.actions().secrets().set("lowercase", "v"));
+        assertThrows(TouchqueConfigException.class, () -> tq.actions().renderTemplate("Bad-Id", "login.request", null));
         assertTrue(api.calls().isEmpty());
     }
 }

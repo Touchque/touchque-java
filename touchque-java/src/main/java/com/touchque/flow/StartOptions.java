@@ -41,13 +41,13 @@ public final class StartOptions {
         return this;
     }
 
-    /** Silent sign-ins: the {@code X-TouchQue-Browser} header, passed through untouched. */
+    /** Silent sign-ins: the {@code X-Touchque-Browser} header, passed through untouched. */
     public StartOptions browserProof(String v) {
         this.browserProof = v;
         return this;
     }
 
-    /** For your TouchQue Actions only ({@code event.context}). */
+    /** For your Touchque Actions only ({@code event.context}). */
     public StartOptions context(Map<String, Object> v) {
         this.context = v;
         return this;

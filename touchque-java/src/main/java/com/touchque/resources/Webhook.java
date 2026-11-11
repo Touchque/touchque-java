@@ -2,8 +2,8 @@ package com.touchque.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueWebhookReplayException;
-import com.touchque.TouchQueWebhookSignatureException;
+import com.touchque.TouchqueWebhookReplayException;
+import com.touchque.TouchqueWebhookSignatureException;
 import com.touchque.internal.Crypto;
 import com.touchque.internal.Json;
 import java.nio.charset.StandardCharsets;
@@ -183,17 +183,17 @@ public final class Webhook {
      * @param rawBody          the raw request body, exactly as received
      * @param signature        the {@code x-signature} header; null uses the {@code signature} field inside the body
      * @param toleranceSeconds reject a callback whose signed timestamp is missing, invalid or further than this from now; 0 disables the check
-     * @param replayCache      when set, a second delivery of the same jti throws {@link TouchQueWebhookReplayException}
-     * @throws TouchQueWebhookSignatureException not from TouchQue, changed, or too old
+     * @param replayCache      when set, a second delivery of the same jti throws {@link TouchqueWebhookReplayException}
+     * @throws TouchqueWebhookSignatureException not from Touchque, changed, or too old
      */
     public ObjectNode verify(String rawBody, String signature, int toleranceSeconds, ReplayCache replayCache) {
         ObjectNode payload = verify(rawBody, signature, toleranceSeconds);
         if (replayCache != null) {
             String jti = Json.str(payload, "jti");
-            if (jti == null || jti.isEmpty()) throw new TouchQueWebhookSignatureException("jti is missing");
+            if (jti == null || jti.isEmpty()) throw new TouchqueWebhookSignatureException("jti is missing");
             // Remember it for twice the window so it outlives any timestamp that could still pass the freshness check.
             Duration ttl = Duration.ofSeconds(Math.max(toleranceSeconds * 2L, 600));
-            if (!replayCache.checkAndSet(jti, ttl)) throw new TouchQueWebhookReplayException(jti);
+            if (!replayCache.checkAndSet(jti, ttl)) throw new TouchqueWebhookReplayException(jti);
         }
         return payload;
     }
@@ -206,26 +206,26 @@ public final class Webhook {
     /** Verifies the signature and the freshness of a webhook (no replay cache) and returns its payload. */
     public ObjectNode verify(String rawBody, String signature, int toleranceSeconds) {
         JsonNode parsed = Json.parse(rawBody);
-        if (!(parsed instanceof ObjectNode payload)) throw new TouchQueWebhookSignatureException("invalid JSON payload");
+        if (!(parsed instanceof ObjectNode payload)) throw new TouchqueWebhookSignatureException("invalid JSON payload");
         String provided = signature == null || signature.isEmpty() ? Json.str(payload, "signature") : signature;
-        if (provided == null || provided.isEmpty()) throw new TouchQueWebhookSignatureException("no signature provided");
+        if (provided == null || provided.isEmpty()) throw new TouchqueWebhookSignatureException("no signature provided");
         String canonical;
         try {
             canonical = canonicalize(rawBody);
         } catch (IllegalArgumentException e) {
-            throw new TouchQueWebhookSignatureException("could not canonicalize the payload");
+            throw new TouchqueWebhookSignatureException("could not canonicalize the payload");
         }
         String expected = Crypto.hmacHex(secret, canonical);
         // Never put the expected signature in the exception: it would be a signing oracle.
         if (!MessageDigest.isEqual(expected.getBytes(StandardCharsets.US_ASCII), provided.getBytes(StandardCharsets.UTF_8))) {
-            throw new TouchQueWebhookSignatureException("invalid signature");
+            throw new TouchqueWebhookSignatureException("invalid signature");
         }
-        // TouchQue always signs a timestamp: a missing or unparseable one fails closed.
+        // Touchque always signs a timestamp: a missing or unparseable one fails closed.
         if (toleranceSeconds > 0) {
             Instant at = parseTime(Json.str(payload, "timestamp"));
-            if (at == null) throw new TouchQueWebhookSignatureException("timestamp is missing or invalid");
+            if (at == null) throw new TouchqueWebhookSignatureException("timestamp is missing or invalid");
             if (Math.abs(Duration.between(at, Instant.now()).toMillis()) > toleranceSeconds * 1000L) {
-                throw new TouchQueWebhookSignatureException("timestamp is outside the allowed window");
+                throw new TouchqueWebhookSignatureException("timestamp is outside the allowed window");
             }
         }
         return payload;

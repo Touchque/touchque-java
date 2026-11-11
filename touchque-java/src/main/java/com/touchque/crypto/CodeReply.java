@@ -23,7 +23,7 @@ import javax.crypto.spec.SecretKeySpec;
  * A code the person types back on the phone ({@code LoginRequestOptions.reply}): a sign-in code
  * another service sent them (a text message, WhatsApp, e-mail). Each request gets a one-time P-256
  * key pair; its public key goes with the request, the phone encrypts what was typed to it, and
- * only you can open it: TouchQue stores and hands back nothing but the ciphertext
+ * only you can open it: Touchque stores and hands back nothing but the ciphertext
  * ({@code login().status(id).reply().get("ct")}).
  *
  * <p>ECDH P-256, HKDF-SHA256 (salt: the request id, info {@code touchque-code-reply-v1}),

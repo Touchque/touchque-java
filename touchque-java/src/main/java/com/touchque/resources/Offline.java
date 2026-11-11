@@ -4,9 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.LoginDetail;
-import com.touchque.TouchQueApiException;
+import com.touchque.TouchqueApiException;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
@@ -22,10 +22,10 @@ import javax.crypto.spec.PBEKeySpec;
 /** Offline Sign: QR challenge and typed-code approvals that work with the phone offline. */
 public final class Offline {
     private static final String CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.offline()}. */
-    public Offline(TouchQueHttp http) {
+    public Offline(TouchqueHttp http) {
         this.http = http;
     }
 
@@ -128,7 +128,7 @@ public final class Offline {
     }
 
     /**
-     * For checking typed time-based codes while your server cannot reach TouchQue (an outage):
+     * For checking typed time-based codes while your server cannot reach Touchque (an outage):
      * salted, slow digests of each user's next codes, never a key. Up to 1,000 users and 24,000
      * user-steps a call; {@code steps} 1-480 (default 480, four hours). Check a code with
      * {@link #matchTotpVerifier}. Requires the workspace policies offlineTotpEnabled and outageVerifiersEnabled.
@@ -144,7 +144,7 @@ public final class Offline {
     }
 
     /**
-     * Checks a typed code against one user's digests without calling TouchQue: the step the code
+     * Checks a typed code against one user's digests without calling Touchque: the step the code
      * belongs to (the current one or one either side), or null. Accept each step once: remember the
      * step you accepted and refuse codes for it or an older one.
      *
@@ -203,7 +203,7 @@ public final class Offline {
     private static JsonNode notApprovedAsResult(Supplier<JsonNode> call) {
         try {
             return call.get();
-        } catch (TouchQueApiException e) {
+        } catch (TouchqueApiException e) {
             if (e.status() >= 500) throw e;
             ObjectNode out = Json.object().put("approved", false);
             String reason = e.reason() != null ? e.reason() : e.code() != null ? e.code() : e.error();

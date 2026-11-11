@@ -3,9 +3,9 @@ package com.touchque.resources;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.LoginDetail;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,10 +27,10 @@ import java.util.Map;
  * Never Locked Out; the help desk cannot.
  */
 public final class Assist {
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.assist()}. */
-    public Assist(TouchQueHttp http) {
+    public Assist(TouchqueHttp http) {
         this.http = http;
     }
 
@@ -62,7 +62,7 @@ public final class Assist {
      */
     public JsonNode open(String externalUsername, Agent agent, String reason, Integer ttlMinutes, boolean notify) {
         if (externalUsername == null || externalUsername.isEmpty() || agent == null || agent.name() == null || agent.name().isEmpty()) {
-            throw new TouchQueConfigException("assist.open() needs externalUsername and agent.name");
+            throw new TouchqueConfigException("assist.open() needs externalUsername and agent.name");
         }
         ObjectNode a = Json.object().put("name", agent.name());
         Json.put(a, "title", agent.title());
@@ -88,7 +88,7 @@ public final class Assist {
 
     /** A person's sessions, or every open one, newest first: the {@code sessions} array. */
     public JsonNode list(String externalUsername, boolean open) {
-        if ((externalUsername == null || externalUsername.isEmpty()) && !open) throw new TouchQueConfigException("assist.list() needs externalUsername or open: true");
+        if ((externalUsername == null || externalUsername.isEmpty()) && !open) throw new TouchqueConfigException("assist.list() needs externalUsername or open: true");
         Map<String, Object> q = new HashMap<>();
         if (externalUsername != null && !externalUsername.isEmpty()) q.put("externalUsername", externalUsername);
         if (open) q.put("open", "true");
@@ -98,7 +98,7 @@ public final class Assist {
     /**
      * Asks the person's phone to confirm {@code action} (reset_2fa, reset_password, activation_link,
      * recovery_link, unlock, new_phone, remove_passkey or your own). {@code challengeCode} is for the
-     * agent only. Throws {@link com.touchque.TouchQueApiException} no_phone, assist_not_open or rate_limited.
+     * agent only. Throws {@link com.touchque.TouchqueApiException} no_phone, assist_not_open or rate_limited.
      */
     public JsonNode verify(String id, String action, String actionText, List<LoginDetail> details) {
         require("verify", "the session id and an action", id, action);
@@ -130,12 +130,12 @@ public final class Assist {
     }
 
     private static String path(String id, String rest) {
-        return "/assist/" + TouchQueHttp.seg(id) + rest;
+        return "/assist/" + TouchqueHttp.seg(id) + rest;
     }
 
     private static void require(String method, String what, String... values) {
         for (String v : values) {
-            if (v == null || v.isEmpty()) throw new TouchQueConfigException("assist." + method + "() needs " + what);
+            if (v == null || v.isEmpty()) throw new TouchqueConfigException("assist." + method + "() needs " + what);
         }
     }
 }

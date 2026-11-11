@@ -2,23 +2,23 @@ package com.touchque.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Base64Url;
 import com.touchque.internal.Crypto;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Pairing a browser by QR code: your page shows a QR code, the person scans it with the TouchQue
+ * Pairing a browser by QR code: your page shows a QR code, the person scans it with the Touchque
  * app, and the phone that scanned is the one asked to approve.
  * <ol>
  * <li>Your page gets the thumbprint of its browser key ({@code @touchque/web} {@code browserKey.thumbprint()})
  * and sends it to your server.</li>
  * <li>{@link #create} registers a pairing and returns {@code uri} ({@code touchque://pair-browser?…}): show
  * it as a QR code. It can be scanned once, for {@code ttlSeconds} (default 120). The nonce in it never
- * leaves your server and the QR: TouchQue keeps only its hash.</li>
+ * leaves your server and the QR: Touchque keeps only its hash.</li>
  * <li>Poll {@link #get}: {@code scanned} once a phone holding one of your users' accounts read it
  * ({@code externalUsername}, {@code proximity}), {@code confirmed} once the person went on,
  * {@code reported} when they said someone told them to scan it (their 2FA freezes).</li>
@@ -32,16 +32,16 @@ public final class QrPairings {
     public static final List<String> REFUSAL_REASONS = List.of("policy", "device_not_approved", "too_many_browsers", "rate_limited", "no_account", "other");
 
     private static final Pattern B64URL_43 = Pattern.compile("^[A-Za-z0-9_-]{43}$");
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.qrPairings()}. */
-    public QrPairings(TouchQueHttp http) {
+    public QrPairings(TouchqueHttp http) {
         this.http = http;
     }
 
     /** What the QR code says: {@code touchque://pair-browser?v=1&p=<pairing>&n=<nonce>&k=<key thumbprint>}. */
     public static String uri(String pairingId, String nonce, String keyThumbprint) {
-        return "touchque://pair-browser?v=1&p=" + TouchQueHttp.seg(pairingId) + "&n=" + TouchQueHttp.seg(nonce) + "&k=" + TouchQueHttp.seg(keyThumbprint);
+        return "touchque://pair-browser?v=1&p=" + TouchqueHttp.seg(pairingId) + "&n=" + TouchqueHttp.seg(nonce) + "&k=" + TouchqueHttp.seg(keyThumbprint);
     }
 
     /** A pairing to register for one browser. */
@@ -88,16 +88,16 @@ public final class QrPairings {
         }
     }
 
-    /** A registered pairing: show {@code uri} as a QR code. {@code nonce} is the one-time nonce in it (TouchQue keeps its SHA-256). */
+    /** A registered pairing: show {@code uri} as a QR code. {@code nonce} is the one-time nonce in it (Touchque keeps its SHA-256). */
     public record Created(String pairingId, String expiresAt, String nonce, String uri) {
     }
 
     /** Registers a pairing for one browser and returns the QR code's text. */
     public Created create(CreateOptions o) {
         if (o.keyThumbprint == null || !B64URL_43.matcher(o.keyThumbprint).matches()) {
-            throw new TouchQueConfigException("qrPairings.create() needs keyThumbprint: the RFC 7638 thumbprint of the browser key, base64url (43 characters).");
+            throw new TouchqueConfigException("qrPairings.create() needs keyThumbprint: the RFC 7638 thumbprint of the browser key, base64url (43 characters).");
         }
-        if (o.ttlSeconds != null && (o.ttlSeconds < 30 || o.ttlSeconds > 300)) throw new TouchQueConfigException("qrPairings.create(): ttlSeconds must be 30 to 300.");
+        if (o.ttlSeconds != null && (o.ttlSeconds < 30 || o.ttlSeconds > 300)) throw new TouchqueConfigException("qrPairings.create(): ttlSeconds must be 30 to 300.");
         String nonce = Base64Url.encode(Crypto.randomBytes(32));
         ObjectNode body = Json.object().put("nonceHash", Base64Url.encode(Crypto.sha256(nonce))).put("keyThumbprint", o.keyThumbprint);
         Json.put(body, "clientIp", o.clientIp);
@@ -127,8 +127,8 @@ public final class QrPairings {
      */
     public JsonNode refuse(String pairingId, String reason, String message, String caseCode, String deviceCode) {
         String path = "/qr-pairings/" + id(pairingId, "refuse") + "/outcome";
-        if (!REFUSAL_REASONS.contains(reason)) throw new TouchQueConfigException("qrPairings.refuse(): reason must be one of " + String.join(", ", REFUSAL_REASONS) + ".");
-        if (message == null || message.isBlank()) throw new TouchQueConfigException("qrPairings.refuse() needs message: what the phone shows (up to 300 characters).");
+        if (!REFUSAL_REASONS.contains(reason)) throw new TouchqueConfigException("qrPairings.refuse(): reason must be one of " + String.join(", ", REFUSAL_REASONS) + ".");
+        if (message == null || message.isBlank()) throw new TouchqueConfigException("qrPairings.refuse() needs message: what the phone shows (up to 300 characters).");
         ObjectNode body = Json.object().put("reason", reason).put("message", message);
         Json.put(body, "caseCode", caseCode);
         Json.put(body, "deviceCode", deviceCode);
@@ -136,7 +136,7 @@ public final class QrPairings {
     }
 
     private static String id(String pairingId, String method) {
-        if (pairingId == null || pairingId.isEmpty()) throw new TouchQueConfigException("qrPairings." + method + "() needs the pairing id.");
-        return TouchQueHttp.seg(pairingId);
+        if (pairingId == null || pairingId.isEmpty()) throw new TouchqueConfigException("qrPairings." + method + "() needs the pairing id.");
+        return TouchqueHttp.seg(pairingId);
     }
 }

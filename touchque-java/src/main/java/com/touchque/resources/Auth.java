@@ -2,19 +2,19 @@ package com.touchque.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 
-/** Setup secrets (the QR code the TouchQue app scans) and a user's link status. */
+/** Setup secrets (the QR code the Touchque app scans) and a user's link status. */
 public final class Auth {
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.auth()}. */
-    public Auth(TouchQueHttp http) {
+    public Auth(TouchqueHttp http) {
         this.http = http;
     }
 
     /**
-     * A new setup secret for a user: show {@code qrCodeDataUrl} so the TouchQue app links the
+     * A new setup secret for a user: show {@code qrCodeDataUrl} so the Touchque app links the
      * phone. 409 when an unscanned or used secret exists ({@link #resetSecret} issues a new one).
      */
     public JsonNode generateSecret(String externalUsername) {
@@ -39,6 +39,6 @@ public final class Auth {
      * unknown user.
      */
     public JsonNode getUser(String externalUsername) {
-        return http.get("/users/" + TouchQueHttp.seg(externalUsername));
+        return http.get("/users/" + TouchqueHttp.seg(externalUsername));
     }
 }

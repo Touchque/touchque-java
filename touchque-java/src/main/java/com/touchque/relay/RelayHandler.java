@@ -3,11 +3,11 @@ package com.touchque.relay;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.LoginDetail;
-import com.touchque.TouchQueApiException;
-import com.touchque.TouchQueClient;
-import com.touchque.TouchQuePasskeyRequiredException;
-import com.touchque.TouchQueRejectedException;
-import com.touchque.TouchQueTimeoutException;
+import com.touchque.TouchqueApiException;
+import com.touchque.TouchqueClient;
+import com.touchque.TouchquePasskeyRequiredException;
+import com.touchque.TouchqueRejectedException;
+import com.touchque.TouchqueTimeoutException;
 import com.touchque.flow.Approval;
 import com.touchque.flow.Guard;
 import com.touchque.internal.Json;
@@ -45,18 +45,18 @@ public final class RelayHandler<T> {
     /** Reserved action: the approval on the phone that unlocks adding a passkey. */
     private static final String PASSKEY_ENROLL_ACTION = "PASSKEY_ENROLL";
 
-    private final TouchQueClient tq;
+    private final TouchqueClient tq;
     private final RelayOptions<T> o;
     private final RateLimit.Limiter limiter;
     private final boolean offlineEnabled;
 
-    public RelayHandler(TouchQueClient client, RelayOptions<T> options) {
+    public RelayHandler(TouchqueClient client, RelayOptions<T> options) {
         this.tq = client;
         this.o = options;
         this.limiter = options.rateLimit == null ? null : new RateLimit.Limiter(options.rateLimit);
         this.offlineEnabled = options.getLoginUser != null || options.allowOfflineWithoutFirstFactor;
         if (options.getLoginUser == null) {
-            client.http().log().warn("[TouchQue] RelayHandler: POST /login takes the username from the request body"
+            client.http().log().warn("[Touchque] RelayHandler: POST /login takes the username from the request body"
                     + (offlineEnabled ? ", and so do the offline routes" : "; the offline routes are disabled until you set it")
                     + ". Set getLoginUser to bind them to your first factor (password step) so they cannot be used against arbitrary users.");
         }
@@ -111,7 +111,7 @@ public final class RelayHandler<T> {
         if (userId == null) return unauthorized();
         try {
             return new RelayResponse(200, tq.auth().generateSecret(userId));
-        } catch (TouchQueApiException e) {
+        } catch (TouchqueApiException e) {
             if (e.status() != 409) return relayError(e);
             // 409: a QR was issued and not scanned yet (safe to issue a new one), or a phone is ALREADY
             // linked. Replacing a linked phone must never happen from a plain session: that is how an
@@ -141,7 +141,7 @@ public final class RelayHandler<T> {
             if (deviceId == null) body.putNull("deviceId");
             else body.put("deviceId", deviceId);
             return new RelayResponse(200, body);
-        } catch (TouchQueApiException e) {
+        } catch (TouchqueApiException e) {
             if (e.status() == 404) return new RelayResponse(200, Json.object().put("linked", false).put("used", false).putNull("deviceId"));
             return relayError(e);
         } catch (RuntimeException e) {
@@ -199,7 +199,7 @@ public final class RelayHandler<T> {
     }
 
     // ── Offline Sign ──────────────────────────────────────────────────────
-    // The username used for onAuthenticated is the one TouchQue returns for the code, never the body's.
+    // The username used for onAuthenticated is the one Touchque returns for the code, never the body's.
 
     private RelayResponse offlineChallenge(RelayRequest<T> req) {
         if (!offlineEnabled) return offlineDisabled();
@@ -328,7 +328,7 @@ public final class RelayHandler<T> {
             JsonNode r = tq.webauthn().authenticateVerify(bodyString(req.body(), "requestId"), bodyObject(req.body(), "response"));
             String who = Json.str(r, "externalUsername");
             boolean success = Json.bool(r, "success");
-            // Open the session only for the user TouchQue says was approved; a name the browser sent is never trusted.
+            // Open the session only for the user Touchque says was approved; a name the browser sent is never trusted.
             if (success && o.getLoginUser != null && who != null && !sameUser(o.getLoginUser.apply(req.nativeRequest()), who)) {
                 return new RelayResponse(401, Json.object().put("error", "verification_failed"));
             }
@@ -358,7 +358,7 @@ public final class RelayHandler<T> {
             if (req.header().apply(Guard.TOKEN_HEADER) == null || req.header().apply(Guard.TOKEN_HEADER).isEmpty()) {
                 try {
                     return new RelayResponse(200, tq.webauthn().registerOptions(userId, true, null));
-                } catch (TouchQueApiException e) {
+                } catch (TouchqueApiException e) {
                     if (!(e.status() == 403 && "enrollment_approval_required".equals(e.code()))) throw e;
                 }
             }
@@ -443,38 +443,38 @@ public final class RelayHandler<T> {
 
     private static RelayResponse offlineDisabled() {
         return new RelayResponse(403, Json.object().put("error", "OFFLINE_REQUIRES_FIRST_FACTOR")
-                .put("message", "Offline sign-in is disabled: configure getLoginUser (or allowOfflineWithoutFirstFactor) on the TouchQue relay."));
+                .put("message", "Offline sign-in is disabled: configure getLoginUser (or allowOfflineWithoutFirstFactor) on the Touchque relay."));
     }
 
     /** Same status mapping as the guard middleware, kept in sync with the Node SDK. */
     private RelayResponse authResultError(Exception e) {
-        if (e instanceof TouchQueRejectedException) {
+        if (e instanceof TouchqueRejectedException) {
             return new RelayResponse(403, Json.object().put("error", "2FA_REJECTED").put("message", "User rejected the 2FA request on their device."));
         }
-        if (e instanceof TouchQuePasskeyRequiredException p) {
+        if (e instanceof TouchquePasskeyRequiredException p) {
             return new RelayResponse(409, Json.object().put("error", "PASSKEY_REQUIRED").put("requestId", p.requestId()).put("message", "Approve this sign-in with your passkey."));
         }
-        if (e instanceof TouchQueTimeoutException) {
+        if (e instanceof TouchqueTimeoutException) {
             return new RelayResponse(408, Json.object().put("error", "2FA_TIMEOUT").put("message", "User did not respond to the 2FA request in time."));
         }
-        if (e instanceof TouchQueApiException a && a.status() < 500) {
+        if (e instanceof TouchqueApiException a && a.status() < 500) {
             String text = firstText(a.error(), Json.str(a.body(), "message"), a.getMessage());
             return new RelayResponse(a.status(), Json.object().put("error", text != null ? text : "request_failed"));
         }
-        tq.http().log().error("[TouchQue Relay Error] " + SdkLog.describe(e));
+        tq.http().log().error("[Touchque Relay Error] " + SdkLog.describe(e));
         return new RelayResponse(503, Json.object().put("error", "2FA_UNAVAILABLE").put("message", "The 2FA verification service is temporarily unavailable."));
     }
 
     /**
-     * For plain relay routes: a client-range TouchQue status is forwarded with its machine-readable
-     * code only (never TouchQue's message text); anything else is 502.
+     * For plain relay routes: a client-range Touchque status is forwarded with its machine-readable
+     * code only (never Touchque's message text); anything else is 502.
      */
     private RelayResponse relayError(Exception e) {
-        if (e instanceof TouchQueApiException a && a.status() < 500) {
+        if (e instanceof TouchqueApiException a && a.status() < 500) {
             String text = firstText(a.code(), a.error());
             return new RelayResponse(a.status(), Json.object().put("error", text != null ? text : "request_failed"));
         }
-        tq.http().log().error("[TouchQue Relay Error] " + SdkLog.describe(e));
+        tq.http().log().error("[Touchque Relay Error] " + SdkLog.describe(e));
         return new RelayResponse(502, Json.object().put("error", "relay_error"));
     }
 

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.util.List;
 
 /**
@@ -17,10 +17,10 @@ public final class ActionTypes {
             "someone_guiding", "safe_account", "remote_access", "asked_for_code", "support_call",
             "met_online", "promised_return", "know_recipient", "sim_in_hand");
 
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.actionTypes()}. */
-    public ActionTypes(TouchQueHttp http) {
+    public ActionTypes(TouchqueHttp http) {
         this.http = http;
     }
 

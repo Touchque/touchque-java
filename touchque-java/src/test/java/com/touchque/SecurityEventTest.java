@@ -46,7 +46,7 @@ class SecurityEventTest {
     @Test
     void refusesEveryInvalidVector() {
         for (JsonNode v : V.get("invalid")) {
-            TouchQueSecurityEventException e = assertThrows(TouchQueSecurityEventException.class, () -> verifier().verify(v.get("token").asText()), v.get("name").asText());
+            TouchqueSecurityEventException e = assertThrows(TouchqueSecurityEventException.class, () -> verifier().verify(v.get("token").asText()), v.get("name").asText());
             assertEquals(v.get("error").asText(), e.error(), v.get("name").asText());
         }
     }
@@ -79,7 +79,7 @@ class SecurityEventTest {
             base.set(stub.baseUrl);
             SecurityEventVerifier verifier = new SecurityEventVerifier(new SecurityEventVerifier.Options(stub.baseUrl, V.get("audience").asText()));
             // The vectors' issuer is not this one: the signature verifies, the issuer does not.
-            assertEquals("invalid_issuer", assertThrows(TouchQueSecurityEventException.class, () -> verifier.verify(first.get("token").asText())).error());
+            assertEquals("invalid_issuer", assertThrows(TouchqueSecurityEventException.class, () -> verifier.verify(first.get("token").asText())).error());
 
             SecurityEventVerifier.PollResult out = SecurityEventVerifier.poll(new SecurityEventVerifier.PollOptions(stub.baseUrl + "/ssf/poll/s1", "tqssf_x")
                     .ack(List.of("a")).maxEvents(5));
@@ -99,13 +99,13 @@ class SecurityEventTest {
             SecurityEventVerifier verifier = new SecurityEventVerifier(new SecurityEventVerifier.Options(stub.baseUrl, V.get("audience").asText()));
             // Keys that cannot be read are the transmitter's problem: answer 503 and it tries again.
             assertEquals("temporarily_unavailable",
-                    assertThrows(TouchQueSecurityEventException.class, () -> verifier.verify(V.get("valid").get(0).get("token").asText())).error());
+                    assertThrows(TouchqueSecurityEventException.class, () -> verifier.verify(V.get("valid").get(0).get("token").asText())).error());
 
-            TouchQueSecurityEventException denied = assertThrows(TouchQueSecurityEventException.class,
+            TouchqueSecurityEventException denied = assertThrows(TouchqueSecurityEventException.class,
                     () -> SecurityEventVerifier.poll(new SecurityEventVerifier.PollOptions(stub.baseUrl + "/ssf/poll/denied", "tqssf_x")));
             assertEquals("authentication_failed", denied.error());
         }
-        assertThrows(TouchQueConfigException.class, () -> SecurityEventVerifier.poll(new SecurityEventVerifier.PollOptions("http://transmitter.example/poll", "tqssf_x")));
-        assertThrows(TouchQueConfigException.class, () -> SecurityEventVerifier.poll(new SecurityEventVerifier.PollOptions("https://transmitter.example/poll", "")));
+        assertThrows(TouchqueConfigException.class, () -> SecurityEventVerifier.poll(new SecurityEventVerifier.PollOptions("http://transmitter.example/poll", "tqssf_x")));
+        assertThrows(TouchqueConfigException.class, () -> SecurityEventVerifier.poll(new SecurityEventVerifier.PollOptions("https://transmitter.example/poll", "")));
     }
 }

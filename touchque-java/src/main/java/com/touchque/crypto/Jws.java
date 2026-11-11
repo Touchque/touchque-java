@@ -9,7 +9,7 @@ import java.security.GeneralSecurityException;
 import java.security.PublicKey;
 import java.security.Signature;
 
-/** JWS signature checks for the algorithms TouchQue uses (ES256, RS256, EdDSA). Internal API. */
+/** JWS signature checks for the algorithms Touchque uses (ES256, RS256, EdDSA). Internal API. */
 public final class Jws {
     private Jws() {
     }

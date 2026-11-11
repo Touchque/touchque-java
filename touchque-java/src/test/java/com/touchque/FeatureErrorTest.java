@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * A feature the workspace's organization cannot use comes back as a typed exception
- * with the feature's id, still a TouchQueApiException. Same scenarios as the Node SDK,
- * against the shared fake TouchQue API.
+ * with the feature's id, still a TouchqueApiException. Same scenarios as the Node SDK,
+ * against the shared fake Touchque API.
  */
 class FeatureErrorTest {
     private final Support.FakeApi api = Support.FakeApi.get();
@@ -35,15 +35,15 @@ class FeatureErrorTest {
     @Test
     void eachFeatureRefusalHasItsOwnException() {
         Object[][] cases = {
-            {"feature_not_in_plan", TouchQueFeatureNotInPlanException.class, TouchQueFeatureException.Reason.NOT_IN_PLAN},
-            {"feature_read_only", TouchQueFeatureReadOnlyException.class, TouchQueFeatureException.Reason.READ_ONLY},
-            {"feature_off", TouchQueFeatureOffException.class, TouchQueFeatureException.Reason.OFF},
+            {"feature_not_in_plan", TouchqueFeatureNotInPlanException.class, TouchqueFeatureException.Reason.NOT_IN_PLAN},
+            {"feature_read_only", TouchqueFeatureReadOnlyException.class, TouchqueFeatureException.Reason.READ_ONLY},
+            {"feature_off", TouchqueFeatureOffException.class, TouchqueFeatureException.Reason.OFF},
         };
         for (Object[] c : cases) {
             api.opts(Map.of("featureRefused", c[0], "feature", "device_risk"));
-            TouchQueFeatureException e = assertThrows(TouchQueFeatureException.class, () -> api.client().login().request("jane@acme.com"));
+            TouchqueFeatureException e = assertThrows(TouchqueFeatureException.class, () -> api.client().login().request("jane@acme.com"));
             assertInstanceOf((Class<?>) c[1], e);
-            assertInstanceOf(TouchQueApiException.class, e);
+            assertInstanceOf(TouchqueApiException.class, e);
             assertEquals(403, e.status());
             assertEquals("device_risk", e.feature());
             assertEquals(c[2], e.featureReason());
@@ -53,7 +53,7 @@ class FeatureErrorTest {
     @Test
     void otherRefusalsStayPlainApiExceptions() {
         api.opts(Map.of("blocked", "access_policy"));
-        TouchQueApiException e = assertThrows(TouchQueApiException.class, () -> api.client().login().request("jane@acme.com"));
-        assertFalse(e instanceof TouchQueFeatureException);
+        TouchqueApiException e = assertThrows(TouchqueApiException.class, () -> api.client().login().request("jane@acme.com"));
+        assertFalse(e instanceof TouchqueFeatureException);
     }
 }

@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.agents.McpAuth;
-import com.touchque.agents.TouchQueOrgAgent;
+import com.touchque.agents.TouchqueOrgAgent;
 import com.touchque.crypto.AgentKeys;
 import com.touchque.crypto.SigningKey;
 import com.touchque.internal.Json;
@@ -28,7 +28,7 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** An organization's AI agent on TouchQue SSO, McpAuth and outage verifiers, against the fake API. */
+/** An organization's AI agent on Touchque SSO, McpAuth and outage verifiers, against the fake API. */
 class OrgAgentMcpTest {
     private static final String APP = "tqapp_paymentsapi0000000000";
     private static final String RESOURCE = "https://mcp.acme.example/mcp";
@@ -54,8 +54,8 @@ class OrgAgentMcpTest {
         AgentKeys.Pair keys = AgentKeys.generate();
         String id = "oagt_abcdefghijkmnpqrstuv";
         api.post("/__test/org-agent", Map.of("agentId", id, "publicKey", keys.publicJwk(), "audiences", List.of(APP), "scopes", List.of("invoices:read", "payments:create")));
-        TouchQueOrgAgent agent = new TouchQueOrgAgent(new TouchQueOrgAgent.Options().agentId(id).privateKey(keys.privateJwk()).issuer(api.baseUrl));
-        TouchQueOrgAgent.Token token = agent.getToken(null, "invoices:read");
+        TouchqueOrgAgent agent = new TouchqueOrgAgent(new TouchqueOrgAgent.Options().agentId(id).privateKey(keys.privateJwk()).issuer(api.baseUrl));
+        TouchqueOrgAgent.Token token = agent.getToken(null, "invoices:read");
         assertEquals(List.of("DPoP", 300, "invoices:read"), List.of(token.tokenType(), token.expiresIn(), token.scope()));
         assertSame(token, agent.getToken(null, "invoices:read"));
         Map<String, String> headers = agent.authorization("GET", api.baseUrl + "/__test/resource", null, "invoices:read");
@@ -63,7 +63,7 @@ class OrgAgentMcpTest {
         assertEquals(200, res.status());
         assertEquals(Json.toNode(Map.of("ok", true, "sub", id, "aud", APP, "via", "key")), res.body());
         assertEquals(401, resource(headers).status()); // a proof is for one request
-        assertEquals("invalid_scope", assertThrows(TouchQueApiException.class, () -> agent.getToken(null, "payments:refund")).code());
+        assertEquals("invalid_scope", assertThrows(TouchqueApiException.class, () -> agent.getToken(null, "payments:refund")).code());
     }
 
     @Test
@@ -72,10 +72,10 @@ class OrgAgentMcpTest {
         api.post("/__test/org-agent", Map.of("agentId", id, "workload", Map.of("subject", "repo:acme/payments:ref:refs/heads/main", "audience", "touchque"),
                 "audiences", List.of(APP), "scopes", List.of("invoices:read")));
         java.util.function.Function<String, Supplier<String>> platform = sub -> () -> api.post("/__test/workload-token", Map.of("sub", sub, "aud", "touchque")).get("token").asText();
-        TouchQueOrgAgent agent = new TouchQueOrgAgent(new TouchQueOrgAgent.Options().agentId(id).issuer(api.baseUrl).assertion(platform.apply("repo:acme/payments:ref:refs/heads/main")));
+        TouchqueOrgAgent agent = new TouchqueOrgAgent(new TouchqueOrgAgent.Options().agentId(id).issuer(api.baseUrl).assertion(platform.apply("repo:acme/payments:ref:refs/heads/main")));
         assertEquals("workload", resource(agent.authorization("GET", api.baseUrl + "/__test/resource", null, null)).body().get("via").asText());
-        TouchQueOrgAgent wrong = new TouchQueOrgAgent(new TouchQueOrgAgent.Options().agentId(id).issuer(api.baseUrl).assertion(platform.apply("repo:evil/x")));
-        assertThrows(TouchQueApiException.class, wrong::getToken);
+        TouchqueOrgAgent wrong = new TouchqueOrgAgent(new TouchqueOrgAgent.Options().agentId(id).issuer(api.baseUrl).assertion(platform.apply("repo:evil/x")));
+        assertThrows(TouchqueApiException.class, wrong::getToken);
     }
 
     @Test
@@ -84,45 +84,45 @@ class OrgAgentMcpTest {
         String id = "oagt_cccccccccccccccccccc";
         api.post("/__test/org-agent", Map.of("agentId", id, "publicKey", keys.publicJwk(), "audiences", List.of(APP), "scopes", List.of("payments:create"),
                 "delegation", List.of("token_exchange", "ciba"), "sharedAccounts", List.of("k3JInstagramAcme01")));
-        TouchQueOrgAgent agent = new TouchQueOrgAgent(new TouchQueOrgAgent.Options().agentId(id).privateKey(keys.privateJwk()).issuer(api.baseUrl));
+        TouchqueOrgAgent agent = new TouchqueOrgAgent(new TouchqueOrgAgent.Options().agentId(id).privateKey(keys.privateJwk()).issuer(api.baseUrl));
         String url = api.baseUrl + "/__test/resource";
 
-        TouchQueOrgAgent.Token exchanged = agent.exchangeToken("member:ada@acme.com", null, null);
+        TouchqueOrgAgent.Token exchanged = agent.exchangeToken("member:ada@acme.com", null, null);
         assertEquals("ada@acme.com", resource(Map.of("Authorization", "DPoP " + exchanged.accessToken(), "DPoP", agent.dpopProof("GET", url, exchanged.accessToken())))
                 .body().get("sub").asText());
-        TouchQueOrgAgent.ConnectionToken google = agent.getConnectionToken("member:ada@acme.com", "google", "email");
+        TouchqueOrgAgent.ConnectionToken google = agent.getConnectionToken("member:ada@acme.com", "google", "email");
         assertEquals(List.of("ya29.ada@acme.com", "Bearer", 3599, "email", "google"),
                 List.of(google.accessToken(), google.tokenType(), google.expiresIn(), google.scope(), google.connection()));
-        assertEquals("invalid_grant", assertThrows(TouchQueApiException.class, () -> agent.getConnectionToken("member:ada@acme.com", "github", null)).code());
+        assertEquals("invalid_grant", assertThrows(TouchqueApiException.class, () -> agent.getConnectionToken("member:ada@acme.com", "github", null)).code());
 
         Map<String, Object> payment = Map.of("type", "payment_initiation", "instructedAmount", Map.of("currency", "TRY", "amount", "500.00"));
-        TouchQueOrgAgent.MemberRequest ask = agent.askMember("ada@acme.com", new TouchQueOrgAgent.AskMemberOptions().bindingMessage("Pay invoice 42").authorizationDetails(List.of(payment)));
+        TouchqueOrgAgent.MemberRequest ask = agent.askMember("ada@acme.com", new TouchqueOrgAgent.AskMemberOptions().bindingMessage("Pay invoice 42").authorizationDetails(List.of(payment)));
         assertEquals(List.of("42", 1), List.of(ask.bindingCode(), ask.interval()));
         api.post("/__test/ciba-answer", Map.of("authReqId", ask.authReqId(), "approve", true));
-        TouchQueOrgAgent.Token approved = agent.waitForMember(ask);
+        TouchqueOrgAgent.Token approved = agent.waitForMember(ask);
         assertEquals(Json.toNode(List.of(payment)), approved.authorizationDetails());
         assertEquals(id, resource(Map.of("Authorization", "DPoP " + approved.accessToken(), "DPoP", agent.dpopProof("GET", url, approved.accessToken())))
                 .body().get("act").asText());
 
-        TouchQueOrgAgent.SharedAccountAsk shared = agent.askToOpenSharedAccount("k3JInstagramAcme01", "ada@acme.com", "Post the launch photo");
+        TouchqueOrgAgent.SharedAccountAsk shared = agent.askToOpenSharedAccount("k3JInstagramAcme01", "ada@acme.com", "Post the launch photo");
         assertEquals("waiting_member", shared.status());
         assertTrue(shared.openUrl().contains("/agent-ask?ask=" + shared.askId()));
         api.post("/__test/shared-ask-answer", Map.of("askId", shared.askId(), "status", "declined"));
-        TouchQueOrgAgent.SharedAccountAskStatus ended = agent.waitForSharedAccount(shared, Duration.ofMillis(50));
+        TouchqueOrgAgent.SharedAccountAskStatus ended = agent.waitForSharedAccount(shared, Duration.ofMillis(50));
         assertEquals("declined", ended.status());
         assertNull(ended.reason());
         assertNull(ended.caseCode());
 
-        TouchQueOrgAgent.MemberRequest no = agent.askMember("ada@acme.com", null);
+        TouchqueOrgAgent.MemberRequest no = agent.askMember("ada@acme.com", null);
         api.post("/__test/ciba-answer", Map.of("authReqId", no.authReqId(), "approve", false));
-        assertEquals("access_denied", assertThrows(TouchQueApiException.class, () -> agent.waitForMember(no)).code());
+        assertEquals("access_denied", assertThrows(TouchqueApiException.class, () -> agent.waitForMember(no)).code());
     }
 
     @Test
     void orgAgentConfigurationMistakes() {
-        assertThrows(TouchQueConfigException.class,
-                () -> new TouchQueOrgAgent(new TouchQueOrgAgent.Options().agentId("oagt_abcdefghijkmnpqrstuv").issuer("http://sso.example.com").assertion(() -> "x")));
-        assertThrows(TouchQueConfigException.class, () -> new TouchQueOrgAgent(new TouchQueOrgAgent.Options().agentId("agt_nope").assertion(() -> "x")));
+        assertThrows(TouchqueConfigException.class,
+                () -> new TouchqueOrgAgent(new TouchqueOrgAgent.Options().agentId("oagt_abcdefghijkmnpqrstuv").issuer("http://sso.example.com").assertion(() -> "x")));
+        assertThrows(TouchqueConfigException.class, () -> new TouchqueOrgAgent(new TouchqueOrgAgent.Options().agentId("agt_nope").assertion(() -> "x")));
     }
 
     private String mcpToken(Map<String, Object> claims) {
@@ -147,16 +147,16 @@ class OrgAgentMcpTest {
         assertEquals("https://tool.example/client.json", claims.clientId());
         assertEquals(List.of("tickets:read"), claims.scopes());
         auth.requireTool(claims, "search_tickets");
-        TouchQueMcpAuthException e = assertThrows(TouchQueMcpAuthException.class, () -> auth.requireTool(claims, "delete_ticket"));
+        TouchqueMcpAuthException e = assertThrows(TouchqueMcpAuthException.class, () -> auth.requireTool(claims, "delete_ticket"));
         assertEquals(403, e.status());
         assertTrue(e.wwwAuthenticate().contains("scope=\"tickets:delete\""));
-        e = assertThrows(TouchQueMcpAuthException.class, () -> auth.verify("POST", RESOURCE, Map.of()));
+        e = assertThrows(TouchqueMcpAuthException.class, () -> auth.verify("POST", RESOURCE, Map.of()));
         assertEquals(401, e.status());
         assertEquals("Bearer resource_metadata=\"https://mcp.acme.example/.well-known/oauth-protected-resource/mcp\"", e.wwwAuthenticate());
         for (Map<String, Object> bad : List.<Map<String, Object>>of(Map.of("aud", "https://other.example/mcp"), Map.of("iss", "https://evil.example/mcp"),
                 Map.of("expiresIn", -120), Map.of("typ", "JWT"))) {
             String token = mcpToken(bad);
-            assertEquals("invalid_token", assertThrows(TouchQueMcpAuthException.class,
+            assertEquals("invalid_token", assertThrows(TouchqueMcpAuthException.class,
                     () -> auth.verify("POST", RESOURCE, Map.of("Authorization", "Bearer " + token))).error(), bad.toString());
         }
     }
@@ -173,19 +173,19 @@ class OrgAgentMcpTest {
             return key.jws(header, Json.object().put("htm", "POST").put("htu", htu).put("iat", Instant.now().getEpochSecond())
                     .put("jti", UUID.randomUUID().toString()).put("ath", AgentKeys.accessTokenHash(token)));
         };
-        assertThrows(TouchQueMcpAuthException.class, () -> auth.verify("POST", RESOURCE, Map.of("Authorization", "Bearer " + token)));
+        assertThrows(TouchqueMcpAuthException.class, () -> auth.verify("POST", RESOURCE, Map.of("Authorization", "Bearer " + token)));
         String good = proof.apply(RESOURCE);
         assertTrue(auth.verify("POST", RESOURCE, Map.of("Authorization", "DPoP " + token, "DPoP", good)).dpopBound());
-        assertEquals("invalid_dpop_proof", assertThrows(TouchQueMcpAuthException.class,
+        assertEquals("invalid_dpop_proof", assertThrows(TouchqueMcpAuthException.class,
                 () -> auth.verify("POST", RESOURCE, Map.of("Authorization", "DPoP " + token, "DPoP", good))).error());
-        assertThrows(TouchQueMcpAuthException.class,
+        assertThrows(TouchqueMcpAuthException.class,
                 () -> auth.verify("POST", RESOURCE, Map.of("Authorization", "DPoP " + token, "DPoP", proof.apply("https://other.example/mcp"))));
     }
 
     @Test
     void outageVerifiersFetchThenMatchOffline() {
         api.link("vpn@example.com");
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         Instant now = Instant.now();
         long step = now.getEpochSecond() / 30;
         JsonNode v = tq.offline().totpVerifiers(List.of("vpn@example.com", "nobody@example.com"), step - 1, 4);
@@ -197,6 +197,6 @@ class OrgAgentMcpTest {
         assertNull(Offline.matchTotpVerifier(v, user, "K7P2QXA", now.plusSeconds(3600)));
         assertNull(Offline.matchTotpVerifier(v, user, "K7P2QX1", now));
         api.opts(Map.of("outageVerifiersDisabled", true));
-        assertThrows(TouchQueApiException.class, () -> tq.offline().totpVerifiers(List.of("vpn@example.com"), null, null));
+        assertThrows(TouchqueApiException.class, () -> tq.offline().totpVerifiers(List.of("vpn@example.com"), null, null));
     }
 }

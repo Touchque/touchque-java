@@ -5,14 +5,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.Assurance;
 import com.touchque.LoginDetail;
 import com.touchque.RiskReason;
-import com.touchque.TouchQueConfigException;
-import com.touchque.TouchQueNetworkException;
-import com.touchque.TouchQuePasskeyRequiredException;
-import com.touchque.TouchQueRejectedException;
-import com.touchque.TouchQueTimeoutException;
+import com.touchque.TouchqueConfigException;
+import com.touchque.TouchqueNetworkException;
+import com.touchque.TouchquePasskeyRequiredException;
+import com.touchque.TouchqueRejectedException;
+import com.touchque.TouchqueTimeoutException;
 import com.touchque.internal.Json;
 import com.touchque.internal.SdkLog;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -22,10 +22,10 @@ public final class Login {
     /** Reasons accepted by {@link #reportFraud}. */
     public static final List<String> FRAUD_REASONS = List.of("chargeback", "account_takeover", "social_engineering", "other");
 
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.login()}. */
-    public Login(TouchQueHttp http) {
+    public Login(TouchqueHttp http) {
         this.http = http;
     }
 
@@ -41,12 +41,12 @@ public final class Login {
      * {@code telemetryToken} for the {@code @touchque/web} widget.
      */
     public RequestResult request(LoginRequestOptions options) {
-        return TouchQueHttp.to(http.post("/login/request", options.toJson()), RequestResult.class);
+        return TouchqueHttp.to(http.post("/login/request", options.toJson()), RequestResult.class);
     }
 
     /** Where a request is now: PENDING, CONFIRMED, REJECTED or EXPIRED. */
     public Status status(String requestId) {
-        return TouchQueHttp.to(http.get("/login/status/" + TouchQueHttp.seg(requestId)), Status.class);
+        return TouchqueHttp.to(http.get("/login/status/" + TouchqueHttp.seg(requestId)), Status.class);
     }
 
     /** Asks the phone and waits for the answer. */
@@ -59,19 +59,19 @@ public final class Login {
      * option, a workspace policy, a critical action or the risk engine) the user picks a number on
      * the phone: {@code onChallenge} runs right after the request exists and before any waiting.
      *
-     * @throws TouchQuePasskeyRequiredException only a passkey can approve (policy), or the user tapped Approve during a call (step_up)
-     * @throws TouchQueRejectedException the user rejected it
-     * @throws TouchQueTimeoutException it expired or the timeout passed
+     * @throws TouchquePasskeyRequiredException only a passkey can approve (policy), or the user tapped Approve during a call (step_up)
+     * @throws TouchqueRejectedException the user rejected it
+     * @throws TouchqueTimeoutException it expired or the timeout passed
      */
     public VerifyResult verify(LoginRequestOptions options) {
-        RequestResult sent = TouchQueHttp.to(http.post("/login/request", options.toJson(false)), RequestResult.class);
-        if (sent.requiresPasskey()) throw new TouchQuePasskeyRequiredException(sent.requestId(), "policy");
+        RequestResult sent = TouchqueHttp.to(http.post("/login/request", options.toJson(false)), RequestResult.class);
+        if (sent.requiresPasskey()) throw new TouchquePasskeyRequiredException(sent.requestId(), "policy");
         if (options.onChallenge() != null) {
             try {
                 options.onChallenge().accept(new VerifyChallenge(sent.requestId(), emptyToNull(sent.challengeCode()), sent.expiresAt(), sent.reasons(), sent.caseCode()));
             } catch (RuntimeException e) {
                 // The caller's callback must not stop the wait.
-                http.log().warn("[TouchQue] onChallenge failed: " + SdkLog.describe(e));
+                http.log().warn("[Touchque] onChallenge failed: " + SdkLog.describe(e));
             }
         }
         return waitFor(sent.requestId(), sent.challengeCode(),
@@ -93,16 +93,16 @@ public final class Login {
                     // Vishing Shield: approved during a call; critical actions wait for the phone to re-confirm.
                     return new VerifyResult(true, s.status(), requestId, emptyToNull(challengeCode), s.assurance(), s.confirmedVia(), s.provisional());
                 case "REJECTED":
-                    throw new TouchQueRejectedException(requestId);
+                    throw new TouchqueRejectedException(requestId);
                 case "EXPIRED":
-                    throw new TouchQueTimeoutException("TouchQue: request '" + requestId + "' expired before it was approved.", requestId);
+                    throw new TouchqueTimeoutException("Touchque: request '" + requestId + "' expired before it was approved.", requestId);
                 default:
                     break;
             }
             // Vishing Shield: tapped during a call, the request now waits for a passkey in the browser.
-            if ("PENDING".equals(s.status()) && s.requiresPasskey()) throw new TouchQuePasskeyRequiredException(requestId, "step_up");
+            if ("PENDING".equals(s.status()) && s.requiresPasskey()) throw new TouchquePasskeyRequiredException(requestId, "step_up");
             if (Instant.now().plus(interval).isAfter(deadline)) {
-                throw new TouchQueTimeoutException("TouchQue: request '" + requestId + "' was not approved within " + timeout.toSeconds()
+                throw new TouchqueTimeoutException("Touchque: request '" + requestId + "' was not approved within " + timeout.toSeconds()
                         + "s. The user did not respond in time.", requestId);
             }
             sleep(interval);
@@ -114,7 +114,7 @@ public final class Login {
             Thread.sleep(d.toMillis());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new TouchQueNetworkException("interrupted", e);
+            throw new TouchqueNetworkException("interrupted", e);
         }
     }
 
@@ -130,12 +130,12 @@ public final class Login {
     /**
      * Uses an approved request exactly once. The first call on a CONFIRMED request wins
      * atomically; every later call (a replayed token, a retried form post) throws
-     * {@link com.touchque.TouchQueApiException} with code {@code already_used} (409). The answer
+     * {@link com.touchque.TouchqueApiException} with code {@code already_used} (409). The answer
      * has {@code approvalProof}, the phone's signature over what it showed, when the phone has a
      * hardware key.
      */
     public JsonNode consume(String requestId) {
-        return http.post("/login/" + TouchQueHttp.seg(requestId) + "/consume", Json.object());
+        return http.post("/login/" + TouchqueHttp.seg(requestId) + "/consume", Json.object());
     }
 
     /**
@@ -147,11 +147,11 @@ public final class Login {
      * @param note   free text for your audit log, at most 500 characters
      */
     public JsonNode reportFraud(String requestId, String reason, String note) {
-        if (requestId == null || requestId.isEmpty()) throw new TouchQueConfigException("reportFraud() needs the request id");
+        if (requestId == null || requestId.isEmpty()) throw new TouchqueConfigException("reportFraud() needs the request id");
         ObjectNode body = Json.object();
         Json.put(body, "reason", reason);
         Json.put(body, "note", note);
-        return http.post("/login/" + TouchQueHttp.seg(requestId) + "/report-fraud", body);
+        return http.post("/login/" + TouchqueHttp.seg(requestId) + "/report-fraud", body);
     }
 
     /** What {@code onChallenge} receives as soon as the request exists. {@code challengeCode} is the number to show, or null. */

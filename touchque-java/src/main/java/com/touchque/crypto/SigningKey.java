@@ -2,7 +2,7 @@ package com.touchque.crypto;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Base64Url;
 import com.touchque.internal.Json;
 import java.nio.charset.StandardCharsets;
@@ -60,12 +60,12 @@ public final class SigningKey {
         else if (source instanceof String s && s.trim().startsWith("{")) jwk = Json.parse(s);
         if (jwk != null && jwk.isObject()) return fromJwk(jwk);
         if (source instanceof String pem) return fromPem(pem, who);
-        throw new TouchQueConfigException(who + ": the private key must be a JWK (JsonNode or JSON) or an EC PEM");
+        throw new TouchqueConfigException(who + ": the private key must be a JWK (JsonNode or JSON) or an EC PEM");
     }
 
     private static SigningKey fromJwk(JsonNode jwk) {
         String dText = Json.str(jwk, "d");
-        if (dText == null || dText.isEmpty()) throw new TouchQueConfigException("The agent key must be the PRIVATE key (it has no d)");
+        if (dText == null || dText.isEmpty()) throw new TouchqueConfigException("The agent key must be the PRIVATE key (it has no d)");
         try {
             byte[] d = Base64Url.decode(dText);
             String kty = Json.str(jwk, "kty");
@@ -81,9 +81,9 @@ public final class SigningKey {
                 return new SigningKey(Keys.ecPrivate(d), "ES256", Json.object().put("kty", "EC").put("crv", "P-256").put("x", x).put("y", y));
             }
         } catch (GeneralSecurityException | IllegalArgumentException e) {
-            throw new TouchQueConfigException("The agent key is not a valid EC P-256 or Ed25519 JWK");
+            throw new TouchqueConfigException("The agent key is not a valid EC P-256 or Ed25519 JWK");
         }
-        throw new TouchQueConfigException("The agent key must be EC P-256 or Ed25519");
+        throw new TouchqueConfigException("The agent key must be EC P-256 or Ed25519");
     }
 
     /** The public half of an Ed25519 private key: the JDK's generator, fed the private key as its seed. */
@@ -107,13 +107,13 @@ public final class SigningKey {
     private static SigningKey fromPem(String pem, String who) {
         String body = pem.replaceAll("-----BEGIN [A-Z ]+-----", "").replaceAll("-----END [A-Z ]+-----", "").replaceAll("\\s", "");
         if (!pem.contains("BEGIN PRIVATE KEY")) {
-            throw new TouchQueConfigException(who + ": an EC key must be PKCS#8 PEM (BEGIN PRIVATE KEY); convert with openssl pkcs8 -topk8 -nocrypt");
+            throw new TouchqueConfigException(who + ": an EC key must be PKCS#8 PEM (BEGIN PRIVATE KEY); convert with openssl pkcs8 -topk8 -nocrypt");
         }
         try {
             PrivateKey priv = KeyFactory.getInstance("EC").generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(body)));
             ECPrivateKey ec = (ECPrivateKey) priv;
             if (ec.getParams().getCurve().getField().getFieldSize() != 256 || !ec.getParams().getCurve().equals(Keys.P256.getCurve())) {
-                throw new TouchQueConfigException("An EC agent key must be on P-256");
+                throw new TouchqueConfigException("An EC agent key must be on P-256");
             }
             // The public point: d·G.
             ECPoint w = multiplyG(ec.getS());
@@ -122,7 +122,7 @@ public final class SigningKey {
                     .put("x", Base64Url.encode(Keys.pad32(w.getAffineX().toByteArray())))
                     .put("y", Base64Url.encode(Keys.pad32(w.getAffineY().toByteArray()))));
         } catch (GeneralSecurityException | IllegalArgumentException | ClassCastException e) {
-            throw new TouchQueConfigException(who + ": the private key must be a JWK (JsonNode or JSON) or an EC P-256 PEM");
+            throw new TouchqueConfigException(who + ": the private key must be a JWK (JsonNode or JSON) or an EC P-256 PEM");
         }
     }
 

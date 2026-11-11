@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.Destination;
 import com.touchque.LoginDetail;
 import com.touchque.SecurityChanges;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Json;
 import java.time.Duration;
 import java.util.List;
@@ -146,14 +146,14 @@ public final class LoginRequestOptions {
 
     /**
      * Silent sign-ins: the browser's device-bound key proof exactly as the browser sent it
-     * ({@code X-TouchQue-Browser}). Once the user approves this request, TouchQue knows the browser.
+     * ({@code X-Touchque-Browser}). Once the user approves this request, Touchque knows the browser.
      */
     public LoginRequestOptions browserProof(String v) {
         this.browserProof = v;
         return this;
     }
 
-    /** For your TouchQue Actions only ({@code event.context}); never shown on the phone. Any JSON object up to 4 KB. */
+    /** For your Touchque Actions only ({@code event.context}); never shown on the phone. Any JSON object up to 4 KB. */
     public LoginRequestOptions context(Map<String, Object> v) {
         this.context = v;
         return this;
@@ -171,7 +171,7 @@ public final class LoginRequestOptions {
         return this;
     }
 
-    /** {@code tr} (default) or {@code en}: the language of the rows TouchQue adds. */
+    /** {@code tr} (default) or {@code en}: the language of the rows Touchque adds. */
     public LoginRequestOptions locale(String v) {
         this.locale = v;
         return this;
@@ -217,7 +217,7 @@ public final class LoginRequestOptions {
     }
 
     ObjectNode toJson(boolean withWaitFields) {
-        if (externalUsername == null || externalUsername.isEmpty()) throw new TouchQueConfigException("A login request needs the user (externalUsername)");
+        if (externalUsername == null || externalUsername.isEmpty()) throw new TouchqueConfigException("A login request needs the user (externalUsername)");
         ObjectNode body = Json.object();
         body.put("externalUsername", externalUsername);
         body.put("type", type == null || type.isEmpty() ? "LOGIN" : type);

@@ -4,9 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.LoginDetail;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,7 +16,7 @@ import java.util.Map;
  * <ol>
  * <li>Let users name colleagues who can vouch for them ({@link #setVouchers}), behind an approval on their phone.</li>
  * <li>When the phone is gone, after the password (or your IdP): {@link #start}. Show {@code bindUri} as a QR for the
- * TouchQue app on the new phone, then poll {@link #status} and show each voucher's {@code code}: the user reads it
+ * Touchque app on the new phone, then poll {@link #status} and show each voucher's {@code code}: the user reads it
  * to the colleague on a call, who types it on their own phone.</li>
  * <li>After a cooling-off nobody vetoed, the account is on the new phone ({@code COMPLETED}); critical actions wait 24 h.</li>
  * </ol>
@@ -26,10 +26,10 @@ public final class Recovery {
     /** Statuses of a recovery still waiting for the new phone, the vouchers or the cooling-off. */
     public static final List<String> OPEN_STATUSES = List.of("AWAITING_DEVICE", "VOUCHING", "COOLING");
 
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.recovery()}. */
-    public Recovery(TouchQueHttp http) {
+    public Recovery(TouchqueHttp http) {
         this.http = http;
     }
 
@@ -118,13 +118,13 @@ public final class Recovery {
 
     /**
      * Starts moving the user to a new phone. Call it only after the first factor. Throws
-     * {@link com.touchque.TouchQueApiException} with code not_enough_vouchers, recovery_in_progress,
+     * {@link com.touchque.TouchqueApiException} with code not_enough_vouchers, recovery_in_progress,
      * blocked, frozen or rate_limited.
      */
     public JsonNode start(StartOptions o) {
         require("start", "the user (externalUsername)", o.externalUsername);
         if ((o.required != null && o.required < 1) || (o.coolOffMinutes != null && o.coolOffMinutes < 1)) {
-            throw new TouchQueConfigException("recovery.start(): required and coolOffMinutes must be positive integers");
+            throw new TouchqueConfigException("recovery.start(): required and coolOffMinutes must be positive integers");
         }
         ObjectNode body = Json.object().put("externalUsername", o.externalUsername);
         Json.put(body, "clientIp", o.clientIp);
@@ -141,13 +141,13 @@ public final class Recovery {
     /** The recovery now, with its receipt chain. Poll it while the user waits. */
     public JsonNode status(String recoveryId) {
         require("status", "recoveryId", recoveryId);
-        return http.get("/recovery/" + TouchQueHttp.seg(recoveryId));
+        return http.get("/recovery/" + TouchqueHttp.seg(recoveryId));
     }
 
     /** A user's recoveries, or ({@code open}) every running one of your workspace: the {@code recoveries} array. */
     public JsonNode list(String externalUsername, boolean open) {
         if ((externalUsername == null || externalUsername.isEmpty()) && !open) {
-            throw new TouchQueConfigException("recovery.list() needs externalUsername or open: true");
+            throw new TouchqueConfigException("recovery.list() needs externalUsername or open: true");
         }
         Map<String, String> q = new HashMap<>();
         if (externalUsername != null && !externalUsername.isEmpty()) q.put("externalUsername", externalUsername);
@@ -162,10 +162,10 @@ public final class Recovery {
         ObjectNode body = Json.object();
         Json.put(body, "by", by);
         Json.put(body, "reason", reason);
-        return http.post("/recovery/" + TouchQueHttp.seg(recoveryId) + "/veto", body);
+        return http.post("/recovery/" + TouchqueHttp.seg(recoveryId) + "/veto", body);
     }
 
     private static void require(String method, String what, String value) {
-        if (value == null || value.isEmpty()) throw new TouchQueConfigException("recovery." + method + "() needs " + what);
+        if (value == null || value.isEmpty()) throw new TouchqueConfigException("recovery." + method + "() needs " + what);
     }
 }

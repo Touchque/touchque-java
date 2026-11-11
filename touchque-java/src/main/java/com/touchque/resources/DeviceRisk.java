@@ -2,9 +2,9 @@ package com.touchque.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,7 +13,7 @@ import java.util.List;
  * your sign-up, password-reset, sign-in or approval page. The page identifies with {@code @touchque/web}
  * ({@code deviceRisk.identify({ siteKey, purpose })} gives {@code { visitorId, requestId, confidence }})
  * and sends you the requestId. Never trust the page's copy: read the identification here
- * ({@link #getEvent}) or check it for an account ({@link #check}). TouchQue keeps keyed hashes only, with
+ * ({@link #getEvent}) or check it for an account ({@link #check}). Touchque keeps keyed hashes only, with
  * a key of your workspace alone, and its risk engine decides.
  *
  * <p>Every signal only ever asks for more: {@code stepUp} means an extra check on this page (an emailed
@@ -34,10 +34,10 @@ public final class DeviceRisk {
     /** What the page had sent: ok, replayed, or no usable identification. */
     public static final List<String> REPORTS = List.of("ok", "replayed", "missing", "unknown", "expired", "invalid");
     private static final java.util.regex.Pattern REQUEST_ID = java.util.regex.Pattern.compile("^dre_[A-Za-z0-9_-]{22}$");
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.deviceRisk()}. */
-    public DeviceRisk(TouchQueHttp http) {
+    public DeviceRisk(TouchqueHttp http) {
         this.http = http;
     }
 
@@ -128,7 +128,7 @@ public final class DeviceRisk {
      */
     public CheckResult check(CheckOptions o) {
         if (o == null) o = CheckOptions.ofRequest(null);
-        if (!EVENTS.contains(o.event)) throw new TouchQueConfigException("deviceRisk.check(): event must be one of " + String.join(", ", EVENTS));
+        if (!EVENTS.contains(o.event)) throw new TouchqueConfigException("deviceRisk.check(): event must be one of " + String.join(", ", EVENTS));
         ObjectNode body = Json.object();
         if (o.requestId != null && !o.requestId.isEmpty()) body.put("requestId", o.requestId.length() > 64 ? o.requestId.substring(0, 64) : o.requestId);
         else if (o.deviceRisk != null && !o.deviceRisk.isEmpty()) body.put("deviceRisk", o.deviceRisk);
@@ -164,7 +164,7 @@ public final class DeviceRisk {
         public SearchOptions cursor(String v) { return put("cursor", v); }
 
         public SearchOptions limit(int v) {
-            if (v < 1 || v > 100) throw new TouchQueConfigException("deviceRisk.searchEvents() limit must be 1 to 100");
+            if (v < 1 || v > 100) throw new TouchqueConfigException("deviceRisk.searchEvents() limit must be 1 to 100");
             return put("limit", Integer.toString(v));
         }
     }
@@ -187,7 +187,7 @@ public final class DeviceRisk {
 
     /** The trusted identification behind a requestId: the visitor, how sure, what the page showed, the engine's verdict. Read-only. */
     public JsonNode getEvent(String requestId) {
-        if (requestId == null || !REQUEST_ID.matcher(requestId).matches()) throw new TouchQueConfigException("deviceRisk.getEvent() needs a requestId (dre_…)");
+        if (requestId == null || !REQUEST_ID.matcher(requestId).matches()) throw new TouchqueConfigException("deviceRisk.getEvent() needs a requestId (dre_…)");
         return http.get("/device-risk/events/" + requestId, java.util.Map.of());
     }
 

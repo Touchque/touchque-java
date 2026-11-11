@@ -3,14 +3,14 @@ package com.touchque.login;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.nio.charset.StandardCharsets;
 
 /**
- * The TouchQue Login My Account API (/me/v1) from your server: the signed-in customer's own
+ * The Touchque Login My Account API (/me/v1) from your server: the signed-in customer's own
  * profile, sign-in methods, devices, apps and data, called with their access token for audience
  * https://&lt;domain&gt;/me/. Security changes, the data export and deletion need a recent
  * sign-in; when it is too old a {@link MyAccountException} with {@link MyAccountException#isStepUp()}
@@ -68,7 +68,7 @@ public final class MyAccount {
     }
 
     private static String seg(String v) {
-        return TouchQueHttp.seg(v);
+        return TouchqueHttp.seg(v);
     }
 
     public ObjectNode get() {
@@ -98,7 +98,7 @@ public final class MyAccount {
     }
 
     /** Needs a recent sign-in. */
-    public void unlinkTouchQueApp() {
+    public void unlinkTouchqueApp() {
         call("DELETE", "/authentication-methods/touchque", null);
     }
 

@@ -44,7 +44,7 @@ class CrossAppAccessTest {
         try {
             f.run();
             return "accepted";
-        } catch (TouchQueIdJagException e) {
+        } catch (TouchqueIdJagException e) {
             return e.getMessage();
         }
     }
@@ -62,7 +62,7 @@ class CrossAppAccessTest {
         CrossAppAccess.IdJagGrant jag = CrossAppAccess.requestIdJag(new CrossAppAccess.RequestOptions("tqapp_test", "tqs_test", "idtoken:ada", "https://rs.example")
                 .issuer(idp).resource("https://rs.example/files"));
         assertEquals("files:read", jag.scope());
-        TouchQueIdJagException refused = assertThrows(TouchQueIdJagException.class,
+        TouchqueIdJagException refused = assertThrows(TouchqueIdJagException.class,
                 () -> CrossAppAccess.requestIdJag(new CrossAppAccess.RequestOptions("tqapp_test", "wrong", "idtoken:ada", "https://rs.example").issuer(idp)));
         assertEquals(List.of("invalid_client", 401), List.of(refused.error(), refused.status()));
 
@@ -96,7 +96,7 @@ class CrossAppAccessTest {
         try {
             f.run();
             return "verified";
-        } catch (TouchQueAgentCardException e) {
+        } catch (TouchqueAgentCardException e) {
             return e.error();
         }
     }

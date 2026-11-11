@@ -3,11 +3,11 @@ package com.touchque.agents;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
-import com.touchque.TouchQueSecurityEventException;
+import com.touchque.TouchqueConfigException;
+import com.touchque.TouchqueSecurityEventException;
 import com.touchque.crypto.Jws;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -30,7 +30,7 @@ import java.util.regex.Pattern;
  * Shared Signals (OpenID Shared Signals Framework 1.0): Security Event Tokens (SETs, RFC 8417) an
  * identity provider sends when something happens to a person's account after sign-in: CAEP
  * session-revoked, credential-change, device-compliance-change; RISC account-disabled,
- * credential-compromise. TouchQue SSO sends them for an organization's members to the receivers
+ * credential-compromise. Touchque SSO sends them for an organization's members to the receivers
  * its admin adds (Organization &gt; Continuous access). Your app ends the person's sessions or asks
  * them to sign in again.
  *
@@ -44,7 +44,7 @@ import java.util.regex.Pattern;
  *         var event = verifier.verify(body);
  *         if ("session-revoked".equals(event.name())) endSessionsOf(event.subject().path("email").asText());
  *         return ResponseEntity.accepted().build();
- *     } catch (TouchQueSecurityEventException e) {
+ *     } catch (TouchqueSecurityEventException e) {
  *         return ResponseEntity.badRequest().body(Map.of("err", e.error(), "description", e.getMessage()));
  *     }
  * }
@@ -54,7 +54,7 @@ import java.util.regex.Pattern;
  * happened. Keep the jtis you handled and skip a repeat.
  */
 public final class SecurityEventVerifier {
-    /** The event types TouchQue sends, by their short name. */
+    /** The event types Touchque sends, by their short name. */
     public static final Map<String, String> TYPES;
 
     static {
@@ -70,7 +70,7 @@ public final class SecurityEventVerifier {
     }
 
     private static final Pattern NAMESPACE = Pattern.compile("^https://schemas\\.openid\\.net/secevent/(caep|risc|ssf)/event-type/([a-z0-9-]+)$");
-    private static final HttpClient POLL_CLIENT = TouchQueHttp.createClient(Duration.ofSeconds(30));
+    private static final HttpClient POLL_CLIENT = TouchqueHttp.createClient(Duration.ofSeconds(30));
 
     private final String issuer;
     private final String audience;
@@ -126,7 +126,7 @@ public final class SecurityEventVerifier {
     }
 
     /**
-     * A verified SET. {@code txn}: the case code of TouchQue's decision ("Why?" in the dashboard), or
+     * A verified SET. {@code txn}: the case code of Touchque's decision ("Why?" in the dashboard), or
      * null; {@code subject}: sub_id as sent; {@code type}: the event type URI; {@code name}: its short
      * name (session-revoked …) for CAEP, RISC and SSF types, null for others; {@code claims}: the
      * event's own (event_timestamp, reason_admin, credential_type …).
@@ -137,7 +137,7 @@ public final class SecurityEventVerifier {
 
     public SecurityEventVerifier(Options options) {
         if (options.issuer == null || options.issuer.isEmpty() || options.audience == null || options.audience.isEmpty()) {
-            throw new TouchQueConfigException("SecurityEventVerifier needs issuer (the transmitter) and audience (your stream's aud)");
+            throw new TouchqueConfigException("SecurityEventVerifier needs issuer (the transmitter) and audience (your stream's aud)");
         }
         this.issuer = options.issuer;
         this.audience = options.audience;
@@ -184,11 +184,11 @@ public final class SecurityEventVerifier {
         }
     }
 
-    private static TouchQueSecurityEventException bad(String message) {
-        return new TouchQueSecurityEventException("invalid_request", message);
+    private static TouchqueSecurityEventException bad(String message) {
+        return new TouchqueSecurityEventException("invalid_request", message);
     }
 
-    /** The SET, checked (signature RS256 with the issuer's keys, typ, issuer, audience, one event); throws {@link TouchQueSecurityEventException}. */
+    /** The SET, checked (signature RS256 with the issuer's keys, typ, issuer, audience, one event); throws {@link TouchqueSecurityEventException}. */
     public SecurityEvent verify(String token) {
         Jws.Parts parts = Jws.split(token != null ? token.trim() : "");
         if (parts == null) throw bad("not a JWT");
@@ -197,17 +197,17 @@ public final class SecurityEventVerifier {
         String typ = Json.str(head, "typ");
         if (typ == null || !typ.equalsIgnoreCase("secevent+jwt")) throw bad("not a Security Event Token (typ secevent+jwt)");
         String kid = Json.str(head, "kid");
-        if (!"RS256".equals(Json.str(head, "alg")) || kid == null) throw new TouchQueSecurityEventException("invalid_key", "unsupported signature");
+        if (!"RS256".equals(Json.str(head, "alg")) || kid == null) throw new TouchqueSecurityEventException("invalid_key", "unsupported signature");
         JsonNode jwk;
         try {
             jwk = keyFor(kid);
         } catch (RuntimeException e) {
-            throw new TouchQueSecurityEventException("temporarily_unavailable", "the transmitter's keys could not be read: " + e.getMessage());
+            throw new TouchqueSecurityEventException("temporarily_unavailable", "the transmitter's keys could not be read: " + e.getMessage());
         }
         if (jwk == null || !Jws.verify("RS256", jwk, parts.input(), parts.signature())) {
-            throw new TouchQueSecurityEventException("invalid_key", "signature does not verify");
+            throw new TouchqueSecurityEventException("invalid_key", "signature does not verify");
         }
-        if (!issuer.equals(Json.str(c, "iss"))) throw new TouchQueSecurityEventException("invalid_issuer", "another issuer");
+        if (!issuer.equals(Json.str(c, "iss"))) throw new TouchqueSecurityEventException("invalid_issuer", "another issuer");
         List<String> aud = new ArrayList<>();
         JsonNode a = c.get("aud");
         if (a != null && a.isArray()) {
@@ -215,7 +215,7 @@ public final class SecurityEventVerifier {
         } else if (a != null && a.isTextual()) {
             aud.add(a.asText());
         }
-        if (!aud.contains(audience)) throw new TouchQueSecurityEventException("invalid_audience", "not for this receiver");
+        if (!aud.contains(audience)) throw new TouchqueSecurityEventException("invalid_audience", "not for this receiver");
         String jti = Json.str(c, "jti");
         JsonNode iat = c.get("iat");
         if (jti == null || iat == null || !iat.isIntegralNumber()) throw bad("jti and iat are required");
@@ -277,8 +277,8 @@ public final class SecurityEventVerifier {
 
     /** Acknowledges what you handled and returns the waiting SETs. */
     public static PollResult poll(PollOptions o) {
-        if (!CrossAppAccess.safeUrl(o.url)) throw new TouchQueConfigException(o.url + " must be an https URL");
-        if (o.token == null || o.token.isEmpty()) throw new TouchQueConfigException("poll needs the stream's token");
+        if (!CrossAppAccess.safeUrl(o.url)) throw new TouchqueConfigException(o.url + " must be an https URL");
+        if (o.token == null || o.token.isEmpty()) throw new TouchqueConfigException("poll needs the stream's token");
         ObjectNode body = Json.object();
         if (o.ack != null) {
             ArrayNode list = body.putArray("ack");
@@ -291,10 +291,10 @@ public final class SecurityEventVerifier {
             HttpResponse<InputStream> res = POLL_CLIENT.send(HttpRequest.newBuilder(URI.create(o.url)).timeout(Duration.ofSeconds(30))
                     .header("Content-Type", "application/json").header("Accept", "application/json").header("Authorization", "Bearer " + o.token)
                     .POST(HttpRequest.BodyPublishers.ofString(Json.write(body))).build(), HttpResponse.BodyHandlers.ofInputStream());
-            ObjectNode data = Json.parseObject(TouchQueHttp.readLimited(res.body()));
+            ObjectNode data = Json.parseObject(TouchqueHttp.readLimited(res.body()));
             if (res.statusCode() != 200) {
                 String err = Json.str(data, "error");
-                throw new TouchQueSecurityEventException(err != null ? err : "server_error", o.url + " answered " + res.statusCode());
+                throw new TouchqueSecurityEventException(err != null ? err : "server_error", o.url + " answered " + res.statusCode());
             }
             Map<String, String> sets = new LinkedHashMap<>();
             JsonNode s = data.get("sets");

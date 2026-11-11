@@ -2,10 +2,10 @@ package example.app;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.LoginDetail;
-import com.touchque.spring.RequireTouchQue;
-import com.touchque.spring.TouchQueGuardOptions;
-import com.touchque.spring.TouchQueSpring;
-import com.touchque.spring.TouchQueWebhookListener;
+import com.touchque.spring.RequireTouchque;
+import com.touchque.spring.TouchqueGuardOptions;
+import com.touchque.spring.TouchqueSpring;
+import com.touchque.spring.TouchqueWebhookListener;
 import com.touchque.agents.McpAuth;
 import com.touchque.flow.Approval;
 import com.touchque.relay.RelayOptions;
@@ -36,7 +36,7 @@ public class TestApp {
     @RestController
     static class Payments {
         @PostMapping("/transfer")
-        @RequireTouchQue("SEND_MONEY")
+        @RequireTouchque("SEND_MONEY")
         public Map<String, Object> transfer(@RequestBody Transfer t, Approval approval) {
             return Map.of("ok", true, "amount", t.amount(), "via", approval.assurance().method());
         }
@@ -52,15 +52,15 @@ public class TestApp {
 
         @PostMapping("/mcp")
         public Map<String, Object> call(HttpServletRequest request, @RequestBody Map<String, String> body) {
-            McpAuth.Claims claims = TouchQueSpring.mcpClaims(request);
+            McpAuth.Claims claims = TouchqueSpring.mcpClaims(request);
             auth.requireTool(claims, body.get("tool"));
             return Map.of("sub", claims.sub(), "tool", body.get("tool"));
         }
     }
 
     @Bean
-    TouchQueGuardOptions sendMoney() {
-        return TouchQueGuardOptions.forAction("SEND_MONEY")
+    TouchqueGuardOptions sendMoney() {
+        return TouchqueGuardOptions.forAction("SEND_MONEY")
                 .user(c -> "jane@acme.com")
                 .details(c -> List.of(LoginDetail.of("Amount", c.argument(Transfer.class).amount())));
     }
@@ -73,7 +73,7 @@ public class TestApp {
     }
 
     @Bean
-    TouchQueWebhookListener webhooks() {
+    TouchqueWebhookListener webhooks() {
         return (event, request) -> {
             if (FAIL_NEXT_EVENT.getAndSet(false)) throw new IllegalStateException("the database is down");
             EVENTS.add(event);

@@ -2,9 +2,9 @@ package com.touchque.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -15,34 +15,34 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * TouchQue Mobile SDK, your backend's side: your own iOS/Android app is the approver of your users
- * (white-label); they never install the TouchQue app.
+ * Touchque Mobile SDK, your backend's side: your own iOS/Android app is the approver of your users
+ * (white-label); they never install the Touchque app.
  * <ol>
  * <li>A user signed in to your app turns approvals on: {@link #createEnrollment} gives a one-time token;
- * your app hands it to the SDK ({@code TouchQue.enroll}).</li>
+ * your app hands it to the SDK ({@code Touchque.enroll}).</li>
  * <li>Ask for approvals as always ({@code login().request}, {@code start}, the guards): they reach your app
  * over the SDK's encrypted connection.</li>
- * <li>Without your APNs/FCM keys in {@link #updateSettings}, TouchQue sends you a signed MOBILE_PUSH webhook
+ * <li>Without your APNs/FCM keys in {@link #updateSettings}, Touchque sends you a signed MOBILE_PUSH webhook
  * per request: verify it, then {@link #pushFromWebhook} gives the APNs payload / FCM data to send with
  * your own credentials.</li>
  * </ol>
  */
 public final class Mobile {
     private static final Set<String> SETTING_KEYS = Set.of("iosAppIds", "androidPackages", "androidCerts", "attestation", "enrollTtlSeconds", "apns", "fcm");
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.mobile()}. */
-    public Mobile(TouchQueHttp http) {
+    public Mobile(TouchqueHttp http) {
         this.http = http;
     }
 
     /**
      * A one-time enrollment token for a user you signed in ({@code enrollmentToken}, {@code tqe_…}).
      * Whoever spends it becomes the user's approver, so authenticate the user first. Throws
-     * {@link com.touchque.TouchQueApiException} already_enrolled (pass {@code replace}) or account_frozen.
+     * {@link com.touchque.TouchqueApiException} already_enrolled (pass {@code replace}) or account_frozen.
      */
     public JsonNode createEnrollment(String externalUsername, boolean replace, Integer ttlSeconds) {
-        if (externalUsername == null || externalUsername.isEmpty()) throw new TouchQueConfigException("mobile.createEnrollment() needs the user (externalUsername)");
+        if (externalUsername == null || externalUsername.isEmpty()) throw new TouchqueConfigException("mobile.createEnrollment() needs the user (externalUsername)");
         ObjectNode body = Json.object().put("externalUsername", externalUsername);
         if (replace) body.put("replace", true);
         Json.put(body, "ttlSeconds", ttlSeconds);
@@ -60,14 +60,14 @@ public final class Mobile {
     }
 
     public JsonNode getDevice(String deviceId) {
-        if (deviceId == null || deviceId.isEmpty()) throw new TouchQueConfigException("mobile.getDevice() needs the device id");
-        return http.get("/mobile/devices/" + TouchQueHttp.seg(deviceId)).get("device");
+        if (deviceId == null || deviceId.isEmpty()) throw new TouchqueConfigException("mobile.getDevice() needs the device id");
+        return http.get("/mobile/devices/" + TouchqueHttp.seg(deviceId)).get("device");
     }
 
     /** Stops a device from approving (the user has no approver until you enrol again). */
     public JsonNode removeDevice(String deviceId) {
-        if (deviceId == null || deviceId.isEmpty()) throw new TouchQueConfigException("mobile.removeDevice() needs the device id");
-        return http.delete("/mobile/devices/" + TouchQueHttp.seg(deviceId));
+        if (deviceId == null || deviceId.isEmpty()) throw new TouchqueConfigException("mobile.removeDevice() needs the device id");
+        return http.delete("/mobile/devices/" + TouchqueHttp.seg(deviceId));
     }
 
     /**
@@ -75,8 +75,8 @@ public final class Mobile {
      * key for its platform) or webhook (MOBILE_PUSH, kind test). {@code ok}: APNs / FCM accepted it.
      */
     public JsonNode testPush(String deviceId) {
-        if (deviceId == null || deviceId.isEmpty()) throw new TouchQueConfigException("mobile.testPush() needs the device id");
-        return http.post("/mobile/devices/" + TouchQueHttp.seg(deviceId) + "/test-push", Json.object());
+        if (deviceId == null || deviceId.isEmpty()) throw new TouchqueConfigException("mobile.testPush() needs the device id");
+        return http.post("/mobile/devices/" + TouchqueHttp.seg(deviceId) + "/test-push", Json.object());
     }
 
     public JsonNode settings() {
@@ -87,19 +87,19 @@ public final class Mobile {
      * Which apps may enrol, whether they must prove themselves, and your push keys. Only the keys
      * given change: iosAppIds, androidPackages, androidCerts (package to SHA-256 of its signing
      * certificates), attestation (off | optional | required), enrollTtlSeconds, apns (keyId, teamId,
-     * topic, key = the .p8 text, production: TouchQue then sends the iOS push), fcm (serviceAccount =
+     * topic, key = the .p8 text, production: Touchque then sends the iOS push), fcm (serviceAccount =
      * the JSON: the Android push); a null value removes a key (use a HashMap). The keys are never shown back.
      */
     public JsonNode updateSettings(Object changes) {
         JsonNode node = Json.toNode(changes);
-        if (!(node instanceof ObjectNode body)) throw new TouchQueConfigException("mobile.updateSettings() takes an object of settings");
+        if (!(node instanceof ObjectNode body)) throw new TouchqueConfigException("mobile.updateSettings() takes an object of settings");
         List<String> unknown = new ArrayList<>();
         Iterator<String> names = body.fieldNames();
         while (names.hasNext()) {
             String k = names.next();
             if (!SETTING_KEYS.contains(k)) unknown.add(k);
         }
-        if (!unknown.isEmpty()) throw new TouchQueConfigException("mobile.updateSettings(): unknown setting " + String.join(", ", unknown));
+        if (!unknown.isEmpty()) throw new TouchqueConfigException("mobile.updateSettings(): unknown setting " + String.join(", ", unknown));
         return http.put("/mobile/settings", body).get("settings");
     }
 

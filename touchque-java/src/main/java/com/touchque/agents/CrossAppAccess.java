@@ -2,11 +2,11 @@ package com.touchque.agents;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
-import com.touchque.TouchQueIdJagException;
-import com.touchque.TouchQueOptions;
+import com.touchque.TouchqueConfigException;
+import com.touchque.TouchqueIdJagException;
+import com.touchque.TouchqueOptions;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -24,7 +24,7 @@ import java.util.function.Function;
 /**
  * Cross App Access: Identity Assertion JWT Authorization Grants (ID-JAG,
  * draft-ietf-oauth-identity-assertion-authz-grant, an open standard). An organization's identity
- * provider (TouchQue SSO) decides which of its apps may reach which other service for its
+ * provider (Touchque SSO) decides which of its apps may reach which other service for its
  * members; the app trades a member's ID token for an ID-JAG there, then the ID-JAG for an access
  * token at the other service's authorization server, with no consent screen per member. Your own
  * authorization server takes them with {@link IdJagVerifier}.
@@ -42,7 +42,7 @@ public final class CrossAppAccess {
     public static final String TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange";
     public static final String JWT_BEARER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 
-    private static final HttpClient SHARED_CLIENT = TouchQueHttp.createClient(Duration.ofSeconds(10));
+    private static final HttpClient SHARED_CLIENT = TouchqueHttp.createClient(Duration.ofSeconds(10));
 
     private CrossAppAccess() {
     }
@@ -59,7 +59,7 @@ public final class CrossAppAccess {
         private String scope;
 
         /**
-         * @param clientId your app at the identity provider ({@code tqapp_…} at TouchQue SSO).
+         * @param clientId your app at the identity provider ({@code tqapp_…} at Touchque SSO).
          * @param clientSecret its secret.
          * @param idToken the member's ID token the identity provider issued to your app.
          * @param audience the other service's authorization server (its issuer).
@@ -134,7 +134,7 @@ public final class CrossAppAccess {
         try {
             URI u = URI.create(url);
             if (u.getHost() == null) return false;
-            return "https".equals(u.getScheme()) || ("http".equals(u.getScheme()) && TouchQueOptions.isLoopback(u.getHost()));
+            return "https".equals(u.getScheme()) || ("http".equals(u.getScheme()) && TouchqueOptions.isLoopback(u.getHost()));
         } catch (IllegalArgumentException | NullPointerException e) {
             return false;
         }
@@ -145,7 +145,7 @@ public final class CrossAppAccess {
         try {
             HttpResponse<InputStream> res = SHARED_CLIENT.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10))
                     .header("Accept", "application/json").GET().build(), HttpResponse.BodyHandlers.ofInputStream());
-            String text = TouchQueHttp.readLimited(res.body());
+            String text = TouchqueHttp.readLimited(res.body());
             if (res.statusCode() >= 400) throw new IllegalStateException(url + " answered " + res.statusCode());
             JsonNode parsed = Json.parse(text);
             return parsed instanceof ObjectNode ? parsed : Json.object();
@@ -160,12 +160,12 @@ public final class CrossAppAccess {
     /** The identity provider's OpenID configuration, checked against its issuer. */
     static JsonNode discover(String issuer, Function<String, JsonNode> fetch) {
         JsonNode meta = fetch.apply(issuer.replaceAll("/+$", "") + "/.well-known/openid-configuration");
-        if (!issuer.equals(Json.str(meta, "issuer"))) throw new TouchQueConfigException("the identity provider's metadata does not match its issuer");
+        if (!issuer.equals(Json.str(meta, "issuer"))) throw new TouchqueConfigException("the identity provider's metadata does not match its issuer");
         return meta;
     }
 
     private static ObjectNode postForm(String url, Map<String, String> form, String basicId, String basicSecret) {
-        if (!safeUrl(url)) throw new TouchQueConfigException(url + " must be an https URL");
+        if (!safeUrl(url)) throw new TouchqueConfigException(url + " must be an https URL");
         StringBuilder body = new StringBuilder();
         form.forEach((k, v) -> {
             if (v == null) return;
@@ -185,18 +185,18 @@ public final class CrossAppAccess {
         try {
             HttpResponse<InputStream> res = SHARED_CLIENT.send(req.build(), HttpResponse.BodyHandlers.ofInputStream());
             status = res.statusCode();
-            parsed = Json.parse(TouchQueHttp.readLimited(res.body()));
+            parsed = Json.parse(TouchqueHttp.readLimited(res.body()));
         } catch (IOException e) {
-            throw new TouchQueIdJagException("temporarily_unavailable", url + ": " + e.getMessage());
+            throw new TouchqueIdJagException("temporarily_unavailable", url + ": " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new TouchQueIdJagException("temporarily_unavailable", "interrupted");
+            throw new TouchqueIdJagException("temporarily_unavailable", "interrupted");
         }
         ObjectNode data = parsed instanceof ObjectNode o ? o : Json.object();
         if (status >= 400) {
             String error = Json.str(data, "error");
             String description = Json.str(data, "error_description");
-            throw new TouchQueIdJagException(error != null ? error : "server_error", description != null ? description : url + " answered " + status, status);
+            throw new TouchqueIdJagException(error != null ? error : "server_error", description != null ? description : url + " answered " + status, status);
         }
         return data;
     }
@@ -205,9 +205,9 @@ public final class CrossAppAccess {
     public static IdJagGrant requestIdJag(RequestOptions o) {
         String endpoint = o.tokenEndpoint;
         if (endpoint == null || endpoint.isEmpty()) {
-            if (o.issuer == null || o.issuer.isEmpty()) throw new TouchQueConfigException("requestIdJag needs issuer or tokenEndpoint");
+            if (o.issuer == null || o.issuer.isEmpty()) throw new TouchqueConfigException("requestIdJag needs issuer or tokenEndpoint");
             endpoint = Json.str(discover(o.issuer, CrossAppAccess::getJson), "token_endpoint");
-            if (endpoint == null) throw new TouchQueConfigException("the identity provider names no token_endpoint");
+            if (endpoint == null) throw new TouchqueConfigException("the identity provider names no token_endpoint");
         }
         Map<String, String> form = new LinkedHashMap<>();
         form.put("grant_type", TOKEN_EXCHANGE_GRANT);
@@ -220,7 +220,7 @@ public final class CrossAppAccess {
         ObjectNode data = postForm(endpoint, form, o.clientId, o.clientSecret);
         String assertion = Json.str(data, "access_token");
         if (!ID_JAG_TOKEN_TYPE.equals(Json.str(data, "issued_token_type")) || assertion == null || assertion.isEmpty()) {
-            throw new TouchQueIdJagException("invalid_response", "the identity provider did not answer with an ID-JAG");
+            throw new TouchqueIdJagException("invalid_response", "the identity provider did not answer with an ID-JAG");
         }
         Long expiresIn = Json.lng(data, "expires_in");
         return new IdJagGrant(assertion, expiresIn == null ? null : expiresIn.intValue(), Json.str(data, "scope"));

@@ -3,26 +3,26 @@ package com.touchque.resources;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.RiskReason;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * Silent sign-ins: ask TouchQue's risk engine whether a sign-in needs the phone at all, and manage
+ * Silent sign-ins: ask Touchque's risk engine whether a sign-in needs the phone at all, and manage
  * the browsers it knows for a user. A browser becomes known when the user approves a request that
  * carried the browser's device-bound key proof; later {@link #check} with a fresh proof from the same
  * browser answers {@code prompt = false} when nothing about the sign-in is new.
  */
 public final class Risk {
     private static final Set<String> ASSURANCE_LEVELS = Set.of("high", "normal", "low");
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.risk()}. */
-    public Risk(TouchQueHttp http) {
+    public Risk(TouchqueHttp http) {
         this.http = http;
     }
 
@@ -61,7 +61,7 @@ public final class Risk {
             return this;
         }
 
-        /** The browser's device-bound key proof ({@code X-TouchQue-Browser}), passed through untouched. */
+        /** The browser's device-bound key proof ({@code X-Touchque-Browser}), passed through untouched. */
         public CheckOptions browserProof(String v) {
             this.browserProof = v;
             return this;
@@ -85,13 +85,13 @@ public final class Risk {
             return this;
         }
 
-        /** Your own limit on how long ago the last phone approval in this browser may be; 0 = always ask. TouchQue never goes beyond 7 days. */
+        /** Your own limit on how long ago the last phone approval in this browser may be; 0 = always ask. Touchque never goes beyond 7 days. */
         public CheckOptions maxAgeSeconds(Integer v) {
             this.maxAgeSeconds = v;
             return this;
         }
 
-        /** For your TouchQue Actions only ({@code event.context}). */
+        /** For your Touchque Actions only ({@code event.context}). */
         public CheckOptions context(Map<String, Object> v) {
             this.context = v;
             return this;
@@ -99,7 +99,7 @@ public final class Risk {
     }
 
     /**
-     * The answer: {@code prompt} is false ONLY when TouchQue said exactly {@code prompt: false}.
+     * The answer: {@code prompt} is false ONLY when Touchque said exactly {@code prompt: false}.
      * Reasons when silent: known_browser, recent_approval, same_phone, familiar_network,
      * no_risk_signal; when asked: no_browser_key, new_browser, approval_too_old, critical_action,
      * risk_signal, silent_mode_shadow… {@code assurance}: high, normal or low. {@code silentMode}
@@ -110,8 +110,8 @@ public final class Risk {
 
     /** Should this sign-in ask the phone? Skip the push only when {@code prompt} is false; on any error, ask as usual. */
     public CheckResult check(CheckOptions o) {
-        if (o.externalUsername == null || o.externalUsername.isEmpty()) throw new TouchQueConfigException("risk.check() needs the user (externalUsername)");
-        if (o.maxAgeSeconds != null && o.maxAgeSeconds < 0) throw new TouchQueConfigException("risk.check(): maxAgeSeconds must be >= 0 (0 = always ask)");
+        if (o.externalUsername == null || o.externalUsername.isEmpty()) throw new TouchqueConfigException("risk.check() needs the user (externalUsername)");
+        if (o.maxAgeSeconds != null && o.maxAgeSeconds < 0) throw new TouchqueConfigException("risk.check(): maxAgeSeconds must be >= 0 (0 = always ask)");
         ObjectNode body = Json.object().put("externalUsername", o.externalUsername);
         Json.put(body, "type", o.type);
         Json.put(body, "clientIp", o.clientIp);
@@ -147,9 +147,9 @@ public final class Risk {
                 "shadow".equals(Json.str(body, "silentMode")) ? "shadow" : "enforce", Json.str(body, "caseCode"));
     }
 
-    /** The browsers TouchQue knows for a user (for an "approved browsers" list in your settings page). */
+    /** The browsers Touchque knows for a user (for an "approved browsers" list in your settings page). */
     public JsonNode browsers(String externalUsername) {
-        if (externalUsername == null || externalUsername.isEmpty()) throw new TouchQueConfigException("risk.browsers() needs the user (externalUsername)");
+        if (externalUsername == null || externalUsername.isEmpty()) throw new TouchqueConfigException("risk.browsers() needs the user (externalUsername)");
         JsonNode list = http.get("/risk/browsers", Map.of("externalUsername", externalUsername)).get("browsers");
         return list != null && list.isArray() ? list : Json.array();
     }
@@ -159,7 +159,7 @@ public final class Risk {
      * phone again. Call it after a password reset or a sign-out everywhere. Returns how many were forgotten.
      */
     public int forgetBrowsers(String externalUsername, String thumbprint) {
-        if (externalUsername == null || externalUsername.isEmpty()) throw new TouchQueConfigException("risk.forgetBrowsers() needs the user (externalUsername)");
+        if (externalUsername == null || externalUsername.isEmpty()) throw new TouchqueConfigException("risk.forgetBrowsers() needs the user (externalUsername)");
         ObjectNode body = Json.object().put("externalUsername", externalUsername);
         Json.put(body, "thumbprint", thumbprint);
         Integer n = Json.integer(http.post("/risk/browsers/forget", body), "forgotten");

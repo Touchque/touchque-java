@@ -3,11 +3,11 @@ package com.touchque.resources;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueApprovalMismatchException;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueApprovalMismatchException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.crypto.ApprovalToken;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -18,7 +18,7 @@ import java.util.Map;
  * AI agents as identities of their own: register an agent with its PUBLIC key, give it an
  * accountable owner and the action types it may ask approvals for, suspend, revoke or stop every
  * agent at once. The agent itself never gets your API key: it signs in with its own key
- * ({@link com.touchque.agents.TouchQueAgent}).
+ * ({@link com.touchque.agents.TouchqueAgent}).
  *
  * <pre>{@code
  * var keys = AgentKeys.generate("ES256");                 // where the agent runs
@@ -26,7 +26,7 @@ import java.util.Map;
  * }</pre>
  */
 public final class Agents {
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
     private final Vault vault;
     private final Object jwksLock = new Object();
     private JsonNode jwks;
@@ -34,7 +34,7 @@ public final class Agents {
     private String audience;
 
     /** Internal: use {@code tq.agents()}. */
-    public Agents(TouchQueHttp http) {
+    public Agents(TouchqueHttp http) {
         this.http = http;
         this.vault = new Vault(http);
     }
@@ -46,7 +46,7 @@ public final class Agents {
 
     /**
      * Uses an agent's approval exactly once, right before you execute: checks {@code expect} against
-     * the token first (nothing is used on a mismatch), then TouchQue checks the token and marks it
+     * the token first (nothing is used on a mismatch), then Touchque checks the token and marks it
      * used, and the answer is checked again. Returns the approval (externalUsername, type, agent,
      * authorizationDetails, approvalProof, caseCode…).
      */
@@ -70,7 +70,7 @@ public final class Agents {
         synchronized (jwksLock) {
             if (audience == null) {
                 String own = Json.str(http.get("/agents/approval-audience"), "audience");
-                if (own == null || own.isEmpty()) throw new TouchQueApprovalMismatchException("Touchque did not name this workspace's approval audience");
+                if (own == null || own.isEmpty()) throw new TouchqueApprovalMismatchException("Touchque did not name this workspace's approval audience");
                 audience = own;
             }
             return audience;
@@ -87,7 +87,7 @@ public final class Agents {
         if (audience == null || audience.isEmpty()) audience = approvalAudience();
         try {
             return ApprovalToken.verifyWith(token, jwks(false), audience, expect);
-        } catch (TouchQueApprovalMismatchException e) {
+        } catch (TouchqueApprovalMismatchException e) {
             if (!String.valueOf(e.getMessage()).contains("unknown key")) throw e;
             return ApprovalToken.verifyWith(token, jwks(true), audience, expect);
         }
@@ -106,7 +106,7 @@ public final class Agents {
     /** Refuses a private key before it leaves this process. */
     private static JsonNode publicOnly(JsonNode jwk) {
         if (jwk.has("d")) {
-            throw new TouchQueConfigException("Pass the agent's PUBLIC key: this one has private parts (d). The private key must stay where the agent runs.");
+            throw new TouchqueConfigException("Pass the agent's PUBLIC key: this one has private parts (d). The private key must stay where the agent runs.");
         }
         return jwk.deepCopy();
     }
@@ -205,7 +205,7 @@ public final class Agents {
 
     /** Removes a key; tokens the agent got with it stop at once. */
     public JsonNode removeKey(String agentId, String kid) {
-        return agent(http.delete(path(agentId) + "/keys/" + TouchQueHttp.seg(kid)));
+        return agent(http.delete(path(agentId) + "/keys/" + TouchqueHttp.seg(kid)));
     }
 
     /** Stops an agent at once (its tokens too) until resumed. */
@@ -269,7 +269,7 @@ public final class Agents {
 
     /** Lets the agent ask this person again (check with them first). */
     public void liftBlock(String agentId, String user) {
-        http.delete(path(agentId) + "/blocks/" + TouchQueHttp.seg(user));
+        http.delete(path(agentId) + "/blocks/" + TouchqueHttp.seg(user));
     }
 
     /** An agent's mandates, optionally one person's: the {@code mandates} array. */
@@ -281,7 +281,7 @@ public final class Agents {
 
     /** Ends an agent's mandate at once. */
     public JsonNode revokeMandate(String agentId, String mandateId) {
-        JsonNode res = http.post(path(agentId) + "/mandates/" + TouchQueHttp.seg(mandateId) + "/revoke", Json.object());
+        JsonNode res = http.post(path(agentId) + "/mandates/" + TouchqueHttp.seg(mandateId) + "/revoke", Json.object());
         return res.has("mandate") ? res.get("mandate") : res;
     }
 
@@ -293,7 +293,7 @@ public final class Agents {
     }
 
     private static String path(String agentId) {
-        return "/agents/" + TouchQueHttp.seg(agentId);
+        return "/agents/" + TouchqueHttp.seg(agentId);
     }
 
     private static JsonNode agent(JsonNode res) {
@@ -302,13 +302,13 @@ public final class Agents {
 
     /**
      * The token vault for your agents: after your own OAuth flow with a person, deposit their tokens;
-     * TouchQue keeps them sealed and refreshes them, and the agents a connection names get a
-     * short-lived access token ({@code TouchQueAgent.getConnectionToken}), never the refresh token.
+     * Touchque keeps them sealed and refreshes them, and the agents a connection names get a
+     * short-lived access token ({@code TouchqueAgent.getConnectionToken}), never the refresh token.
      */
     public static final class Vault {
-        private final TouchQueHttp http;
+        private final TouchqueHttp http;
 
-        Vault(TouchQueHttp http) {
+        Vault(TouchqueHttp http) {
             this.http = http;
         }
 
@@ -328,12 +328,12 @@ public final class Agents {
             Json.put(body, "tenant", tenant);
             Json.put(body, "issuer", issuer);
             if (agentIds != null) body.set("agentIds", Json.toNode(agentIds));
-            return http.put("/agents/vault/connections/" + TouchQueHttp.seg(name), body).get("connection");
+            return http.put("/agents/vault/connections/" + TouchqueHttp.seg(name), body).get("connection");
         }
 
         /** Removes it, and every person's tokens kept for it. */
         public JsonNode removeConnection(String name) {
-            return http.delete("/agents/vault/connections/" + TouchQueHttp.seg(name));
+            return http.delete("/agents/vault/connections/" + TouchqueHttp.seg(name));
         }
 
         /** Keeps a person's tokens (replacing earlier ones) after your own OAuth flow with them. */
@@ -342,7 +342,7 @@ public final class Agents {
             Json.put(body, "refreshToken", refreshToken);
             Json.put(body, "expiresIn", expiresIn);
             Json.put(body, "scope", scope);
-            return http.put("/agents/vault/accounts/" + TouchQueHttp.seg(connection) + "/" + TouchQueHttp.seg(user), body).get("account");
+            return http.put("/agents/vault/accounts/" + TouchqueHttp.seg(connection) + "/" + TouchqueHttp.seg(user), body).get("account");
         }
 
         /** A person's accounts in the vault (never a token): the {@code accounts} array. */
@@ -352,7 +352,7 @@ public final class Agents {
 
         /** Deletes a person's tokens: agents get nothing more for them there. */
         public void removeAccount(String connection, String user) {
-            http.delete("/agents/vault/accounts/" + TouchQueHttp.seg(connection) + "/" + TouchQueHttp.seg(user));
+            http.delete("/agents/vault/accounts/" + TouchqueHttp.seg(connection) + "/" + TouchqueHttp.seg(user));
         }
     }
 }

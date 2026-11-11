@@ -5,15 +5,15 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.Assurance;
 import com.touchque.LoginDetail;
 import com.touchque.RiskReason;
-import com.touchque.TouchQueApiException;
-import com.touchque.TouchQueApprovalMismatchException;
-import com.touchque.TouchQueClient;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueApiException;
+import com.touchque.TouchqueApprovalMismatchException;
+import com.touchque.TouchqueClient;
+import com.touchque.TouchqueConfigException;
 import com.touchque.crypto.Details;
 import com.touchque.internal.Base64Url;
 import com.touchque.internal.Crypto;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import com.touchque.resources.Login;
 import com.touchque.resources.LoginRequestOptions;
 import java.nio.charset.StandardCharsets;
@@ -25,8 +25,8 @@ import java.util.Map;
 
 /**
  * The headless step-up flow shared by every integration: start, show the step in YOUR UI, check,
- * complete exactly once. Use it through {@link TouchQueClient#start}, {@link TouchQueClient#check}
- * and {@link TouchQueClient#complete}.
+ * complete exactly once. Use it through {@link TouchqueClient#start}, {@link TouchqueClient#check}
+ * and {@link TouchqueClient#complete}.
  */
 public final class Steps {
     private static final Map<String, String> STATE_MAP = Map.of("PENDING", "waiting", "CONFIRMED", "approved", "REJECTED", "rejected", "EXPIRED", "expired");
@@ -34,8 +34,8 @@ public final class Steps {
     private Steps() {
     }
 
-    public static Step start(TouchQueClient client, String action, StartOptions o) {
-        if (o.user == null || o.user.isEmpty()) throw new TouchQueConfigException("start() needs the user id");
+    public static Step start(TouchqueClient client, String action, StartOptions o) {
+        if (o.user == null || o.user.isEmpty()) throw new TouchqueConfigException("start() needs the user id");
         List<LoginDetail> norm = Details.normalize(o.details);
         List<LoginDetail> details = norm.isEmpty() ? null : norm;
         try {
@@ -55,7 +55,7 @@ public final class Steps {
             // telemetryToken only when the workspace collects behavioural signals; the canary only on this first step.
             return new Step("waiting", res.requestId(), emptyToNull(res.challengeCode()), res.expiresAt(), details, caseCode, reasons,
                     emptyToNull(res.telemetryToken()), canary, null, null, null, null, null);
-        } catch (TouchQueApiException e) {
+        } catch (TouchqueApiException e) {
             String code = e.code() != null ? e.code() : e.error();
             String caseCode = e.caseCode();
             String message = String.valueOf(e.getMessage()).toLowerCase(Locale.ROOT);
@@ -65,7 +65,7 @@ public final class Steps {
             if (e.status() == 423) return Step.of("frozen").withRetryAfter(e.retryAfter()).withCaseCode(caseCode);
             if (e.status() == 429) return Step.of("rate_limited").withRetryAfter(e.retryAfter()).withCaseCode(caseCode);
             if (e.status() == 400 && ("unknown_action".equals(code) || message.contains("invalid action type"))) {
-                throw new TouchQueConfigException("Unknown action \"" + action + "\". Create it once with tq.actionTypes().define(\"" + action
+                throw new TouchqueConfigException("Unknown action \"" + action + "\". Create it once with tq.actionTypes().define(\"" + action
                         + "\", ...) or in the dashboard (Action Types).");
             }
             if (e.status() == 403) {
@@ -80,16 +80,16 @@ public final class Steps {
     }
 
     /** First-time linking. Never unlinks a phone: a secret is only re-issued when the account is confirmed NOT linked. */
-    private static Step enrollStep(TouchQueClient client, String user) {
+    private static Step enrollStep(TouchqueClient client, String user) {
         try {
             JsonNode gen = client.auth().generateSecret(user);
             return Step.of("enroll").withEnroll(enroll(gen));
-        } catch (TouchQueApiException e) {
+        } catch (TouchqueApiException e) {
             if (e.status() != 409) throw e;
             JsonNode current = null;
             try {
                 current = client.auth().getUser(user);
-            } catch (TouchQueApiException ignored) {
+            } catch (TouchqueApiException ignored) {
                 // unknown user: reset below
             }
             if (current != null && (Json.bool(current, "used") || emptyToNull(Json.str(current, "deviceId")) != null)) {
@@ -109,14 +109,14 @@ public final class Steps {
         return new Step.Enroll(Json.str(res, "qrCodeDataUrl"), codes, Json.str(res, "expiresAt"));
     }
 
-    public static Step check(TouchQueClient client, String requestId) {
+    public static Step check(TouchqueClient client, String requestId) {
         Login.Status s = client.login().status(requestId);
         String state = "PENDING".equals(s.status()) && s.requiresPasskey() ? "passkey_required" : STATE_MAP.getOrDefault(String.valueOf(s.status()), "waiting");
         Step step = Step.of(state).withRequestId(requestId);
         return "approved".equals(state) ? step.withAssurance(s.assurance()) : step;
     }
 
-    public static Approval complete(TouchQueClient client, String requestId, CompleteExpectations expect) {
+    public static Approval complete(TouchqueClient client, String requestId, CompleteExpectations expect) {
         JsonNode res = client.login().consume(requestId);
         String externalUsername = Json.str(res, "externalUsername");
         boolean sameUser = externalUsername != null && externalUsername.equalsIgnoreCase(expect.user());
@@ -124,11 +124,11 @@ public final class Steps {
         // An empty referenceId is never sent, so the API holds none: "" and null are the same transaction.
         boolean sameRef = java.util.Objects.equals(emptyToNull(Json.str(res, "referenceId")), emptyToNull(expect.referenceId()));
         if (!sameUser || !String.valueOf(Json.str(res, "type")).equals(expect.action()) || !sameDetails || !sameRef) {
-            throw new TouchQueApprovalMismatchException("this approval is for a different user, action or transaction.");
+            throw new TouchqueApprovalMismatchException("this approval is for a different user, action or transaction.");
         }
         JsonNode provisional = res.get("provisional");
         Boolean prov = provisional != null && provisional.isBoolean() ? provisional.booleanValue() : null;
-        return new Approval(requestId, externalUsername, Json.str(res, "type"), TouchQueHttp.to(res.get("assurance"), Assurance.class),
+        return new Approval(requestId, externalUsername, Json.str(res, "type"), TouchqueHttp.to(res.get("assurance"), Assurance.class),
                 Json.str(res, "confirmedVia"), res.get("approvalProof") instanceof ObjectNode p ? p : null, prov,
                 prov == null ? null : Json.bool(res, "revoked"), Json.str(res, "revokeReason"), Json.str(res, "reconfirmedAt"), null);
     }

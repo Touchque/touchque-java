@@ -2,7 +2,7 @@ package com.touchque.login;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Base64Url;
 import com.touchque.internal.Crypto;
 import com.touchque.internal.Json;
@@ -17,7 +17,7 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 /**
- * Encrypted cookies for apps that use TouchQue Login without a session store: the sign-in in
+ * Encrypted cookies for apps that use Touchque Login without a session store: the sign-in in
  * progress (state, nonce, PKCE verifier, where to go back) and the signed-in session (user
  * claims, tokens). AES-256-GCM with a key derived from your secret; values too big for one
  * cookie are split across several (name.0, name.1…). The same format as the Node SDK's
@@ -31,7 +31,7 @@ public final class LoginSession {
     }
 
     private static byte[] keyOf(String secret, String purpose) {
-        if (secret == null || secret.length() < 32) throw new TouchQueConfigException("The cookie secret must be at least 32 characters");
+        if (secret == null || secret.length() < 32) throw new TouchqueConfigException("The cookie secret must be at least 32 characters");
         return Crypto.sha256("touchque-login:" + purpose + ":" + secret);
     }
 
@@ -94,7 +94,7 @@ public final class LoginSession {
             out.put(name, sealed);
         } else {
             int chunks = (sealed.length() + CHUNK - 1) / CHUNK;
-            if (chunks > MAX_CHUNKS) throw new TouchQueConfigException("The session is too large for cookies");
+            if (chunks > MAX_CHUNKS) throw new TouchqueConfigException("The session is too large for cookies");
             for (int i = 0; i < chunks; i++) out.put(name + "." + i, sealed.substring(i * CHUNK, Math.min(sealed.length(), (i + 1) * CHUNK)));
         }
         for (String k : existing) {

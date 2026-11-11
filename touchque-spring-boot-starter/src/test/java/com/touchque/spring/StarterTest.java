@@ -64,7 +64,7 @@ class StarterTest {
     }
 
     @Test
-    void requireTouchQueWaitsForThePhoneThenRunsOnce() throws Exception {
+    void requireTouchqueWaitsForThePhoneThenRunsOnce() throws Exception {
         HttpResponse<String> first = send("POST", "/transfer", Map.of("amount", "250 EUR"), Map.of());
         assertEquals(202, first.statusCode());
         assertEquals("no-store", first.headers().firstValue("Cache-Control").orElse(null));
@@ -73,15 +73,15 @@ class StarterTest {
         JsonNode calls = API.get("/__test/calls");
         assertEquals(Json.parse("[{\"label\":\"Amount\",\"value\":\"250 EUR\"}]"), calls.get(calls.size() - 1).get("body").get("details"));
         String token = step.get("token").asText();
-        assertEquals(202, send("POST", "/transfer", Map.of("amount", "250 EUR"), Map.of("X-TouchQue-Token", token)).statusCode());
+        assertEquals(202, send("POST", "/transfer", Map.of("amount", "250 EUR"), Map.of("X-Touchque-Token", token)).statusCode());
         API.post("/__test/approve", Map.of("via", "DEVICE"));
-        HttpResponse<String> done = send("POST", "/transfer", Map.of("amount", "250 EUR"), Map.of("X-TouchQue-Token", token));
+        HttpResponse<String> done = send("POST", "/transfer", Map.of("amount", "250 EUR"), Map.of("X-Touchque-Token", token));
         assertEquals(200, done.statusCode());
         assertEquals(Json.parse("{\"ok\":true,\"amount\":\"250 EUR\",\"via\":\"push\"}"), Json.parse(done.body()));
-        int replay = send("POST", "/transfer", Map.of("amount", "250 EUR"), Map.of("X-TouchQue-Token", token)).statusCode();
+        int replay = send("POST", "/transfer", Map.of("amount", "250 EUR"), Map.of("X-Touchque-Token", token)).statusCode();
         assertTrue(List.of(403, 408, 409).contains(replay), "replay answered " + replay);
         // A token is bound to the details it was approved with.
-        assertEquals(202, send("POST", "/transfer", Map.of("amount", "9999 EUR"), Map.of("X-TouchQue-Token", token)).statusCode());
+        assertEquals(202, send("POST", "/transfer", Map.of("amount", "9999 EUR"), Map.of("X-Touchque-Token", token)).statusCode());
 
         API.post("/__test/opts", Map.of("frozen", true));
         HttpResponse<String> frozen = send("POST", "/transfer", Map.of("amount", "1 EUR"), Map.of());
@@ -95,7 +95,7 @@ class StarterTest {
         assertEquals(202, login.statusCode(), login.body());
         String token = Json.parse(login.body()).get("token").asText();
         API.post("/__test/approve", Map.of("via", "DEVICE"));
-        HttpResponse<String> done = send("POST", "/touchque/login", Map.of(), Map.of("X-Test-User", "jane@acme.com", "X-TouchQue-Token", token));
+        HttpResponse<String> done = send("POST", "/touchque/login", Map.of(), Map.of("X-Test-User", "jane@acme.com", "X-Touchque-Token", token));
         assertEquals(200, done.statusCode(), done.body());
         assertEquals("jane@acme.com", done.headers().firstValue("X-Signed-In").orElse(null));
         assertEquals(404, send("POST", "/touchque/nope", Map.of(), Map.of()).statusCode());

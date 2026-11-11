@@ -1,6 +1,6 @@
 package com.touchque.crypto;
 
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Crypto;
 import com.touchque.resources.SafeTx;
 import java.io.ByteArrayOutputStream;
@@ -23,9 +23,9 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * Safe Guard approvals, checked without trusting TouchQue. The approver's phone decodes the raw Safe
+ * Safe Guard approvals, checked without trusting Touchque. The approver's phone decodes the raw Safe
  * transaction itself and signs, with a P-256 key only its biometrics unlock, a 105-byte approval that
- * TouchQueSafeGuard checks on chain: {@code index (1) | expiresAt (8) | displayDigest (32) | r (32) | s (32)},
+ * TouchqueSafeGuard checks on chain: {@code index (1) | expiresAt (8) | displayDigest (32) | r (32) | s (32)},
  * over the SHA-256 of the 149-byte message {@code "TQG1" | purpose (1) | chainId (32) | guard (20) | Safe (20)
  * | subject (32) | expiresAt (8) | displayDigest (32)}, where subject is the Safe transaction hash (EIP-712,
  * purpose 1 {@code approve}) or, for a change the guard schedules, the governance hash (purpose 2
@@ -120,6 +120,7 @@ public final class SafeApproval {
     private static final byte[] DOMAIN_TYPEHASH = keccak256(ascii("EIP712Domain(uint256 chainId,address verifyingContract)"));
     private static final byte[] SAFE_TX_TYPEHASH = keccak256(ascii(
             "SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)"));
+    // The guard on chain and the phones hash this exact type string, so it keeps its original spelling.
     private static final byte[] GOVERNANCE_TYPEHASH = keccak256(ascii(
             "TouchQueGovernance(uint256 chainId,address safe,address to,uint256 value,bytes32 dataHash,uint8 operation)"));
     private static final byte[] SCHEDULE_SELECTOR = Arrays.copyOf(keccak256(ascii("schedule(address,bytes32,bytes)")), 4);
@@ -153,7 +154,7 @@ public final class SafeApproval {
         byte code = switch (String.valueOf(purpose)) {
             case "approve" -> 1;
             case "schedule" -> 2;
-            default -> throw new TouchQueConfigException("SafeApproval: purpose is 'approve' or 'schedule'.");
+            default -> throw new TouchqueConfigException("SafeApproval: purpose is 'approve' or 'schedule'.");
         };
         byte[] expires = ByteBuffer.allocate(8).putLong(expiresAt).array();
         return hex(concat(MAGIC, new byte[] {code}, uint(chainId, "chainId", MAX_UINT64), Arrays.copyOfRange(address(guard, "guard"), 12, 32),
@@ -167,7 +168,7 @@ public final class SafeApproval {
     }
 
     /**
-     * Checks a phone's Safe Guard approval the way TouchQueSafeGuard does, without trusting the server that
+     * Checks a phone's Safe Guard approval the way TouchqueSafeGuard does, without trusting the server that
      * relayed it: the Safe and governance hashes come from {@code target}, the key from the guard's approver list
      * on chain ({@code x || y}, 128 hex characters). Only an ordinary approval ({@code approve}) is accepted
      * unless {@link VerifyOptions#purpose} names {@code schedule}. Throws only when the target is not a Safe
@@ -280,9 +281,9 @@ public final class SafeApproval {
     }
 
     private static Fields parse(SafeTx t) {
-        if (t == null) throw new TouchQueConfigException("SafeApproval: pass a SafeTx.");
-        if (t.operation() != 0 && t.operation() != 1) throw new TouchQueConfigException("SafeApproval: operation must be 0 (call) or 1 (delegatecall).");
-        if (t.nonce() == null || t.nonce().isEmpty()) throw new TouchQueConfigException("SafeApproval: nonce is required.");
+        if (t == null) throw new TouchqueConfigException("SafeApproval: pass a SafeTx.");
+        if (t.operation() != 0 && t.operation() != 1) throw new TouchqueConfigException("SafeApproval: operation must be 0 (call) or 1 (delegatecall).");
+        if (t.nonce() == null || t.nonce().isEmpty()) throw new TouchqueConfigException("SafeApproval: nonce is required.");
         return new Fields(uint(t.chainId(), "chainId", MAX_UINT64), address(t.safe(), "safe"), address(t.guard(), "guard"), address(t.to(), "to"),
                 uint(orZero(t.value()), "value", MAX_UINT256), bytes(t.data() == null ? "0x" : t.data(), "data", -1), (byte) t.operation(),
                 uint(orZero(t.safeTxGas()), "safeTxGas", MAX_UINT256), uint(orZero(t.baseGas()), "baseGas", MAX_UINT256),
@@ -296,7 +297,7 @@ public final class SafeApproval {
 
     private static byte[] uint(String value, String field, BigInteger max) {
         if (value == null || !DECIMAL.matcher(value).matches() || new BigInteger(value).compareTo(max) > 0) {
-            throw new TouchQueConfigException("SafeApproval: " + field + " must be a non-negative integer as a decimal string.");
+            throw new TouchqueConfigException("SafeApproval: " + field + " must be a non-negative integer as a decimal string.");
         }
         return word(new BigInteger(value));
     }
@@ -314,19 +315,19 @@ public final class SafeApproval {
     }
 
     private static byte[] address(String value, String field) {
-        if (value == null || !ADDRESS.matcher(value).matches()) throw new TouchQueConfigException("SafeApproval: " + field + " must be an address (0x and 40 hex characters).");
+        if (value == null || !ADDRESS.matcher(value).matches()) throw new TouchqueConfigException("SafeApproval: " + field + " must be an address (0x and 40 hex characters).");
         return concat(new byte[12], HexFormat.of().parseHex(value.substring(2)));
     }
 
     private static byte[] bytes(String value, String field, int size) {
         if (value == null || !HEX.matcher(value).matches() || (size >= 0 && value.length() != 2 + 2 * size)) {
-            throw new TouchQueConfigException("SafeApproval: " + field + " must be 0x-prefixed hex" + (size >= 0 ? " of " + size + " bytes." : "."));
+            throw new TouchqueConfigException("SafeApproval: " + field + " must be 0x-prefixed hex" + (size >= 0 ? " of " + size + " bytes." : "."));
         }
         return HexFormat.of().parseHex(value.substring(2));
     }
 
     private static List<byte[]> approvals(List<String> approvals) {
-        if (approvals == null || approvals.isEmpty() || approvals.size() > 255) throw new TouchQueConfigException("SafeApproval: pass 1 to 255 approvals.");
+        if (approvals == null || approvals.isEmpty() || approvals.size() > 255) throw new TouchqueConfigException("SafeApproval: pass 1 to 255 approvals.");
         List<byte[]> out = new ArrayList<>();
         for (int i = 0; i < approvals.size(); i++) {
             String a = approvals.get(i);

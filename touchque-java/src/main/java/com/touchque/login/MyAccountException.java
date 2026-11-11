@@ -1,9 +1,9 @@
 package com.touchque.login;
 
-import com.touchque.TouchQueException;
+import com.touchque.TouchqueException;
 
 /** A My Account API call failed; {@link #isStepUp()} means the sign-in is too old for it (RFC 9470). */
-public class MyAccountException extends TouchQueException {
+public class MyAccountException extends TouchqueException {
     private final String errorCode;
     private final int status;
     private final String description;

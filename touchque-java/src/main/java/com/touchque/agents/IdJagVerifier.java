@@ -2,8 +2,8 @@ package com.touchque.agents;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
-import com.touchque.TouchQueIdJagException;
+import com.touchque.TouchqueConfigException;
+import com.touchque.TouchqueIdJagException;
 import com.touchque.crypto.Jws;
 import com.touchque.internal.Json;
 import java.time.Duration;
@@ -91,7 +91,7 @@ public final class IdJagVerifier {
 
     public IdJagVerifier(Options options) {
         if (options.issuer == null || options.issuer.isEmpty() || options.audience == null || options.audience.isEmpty()) {
-            throw new TouchQueConfigException("IdJagVerifier needs issuer (the identity provider) and audience (your authorization server's issuer)");
+            throw new TouchqueConfigException("IdJagVerifier needs issuer (the identity provider) and audience (your authorization server's issuer)");
         }
         this.issuer = options.issuer;
         this.audience = options.audience;
@@ -135,11 +135,11 @@ public final class IdJagVerifier {
         }
     }
 
-    private static TouchQueIdJagException bad(String message) {
-        return new TouchQueIdJagException("invalid_grant", message);
+    private static TouchqueIdJagException bad(String message) {
+        return new TouchqueIdJagException("invalid_grant", message);
     }
 
-    /** The ID-JAG, checked and used once; throws {@link TouchQueIdJagException} (error invalid_grant). */
+    /** The ID-JAG, checked and used once; throws {@link TouchqueIdJagException} (error invalid_grant). */
     public Claims verify(String assertion, String clientId) {
         Jws.Parts parts = Jws.split(assertion != null ? assertion : "");
         if (parts == null) throw bad("assertion is not a JWT");
@@ -153,7 +153,7 @@ public final class IdJagVerifier {
         try {
             key = keyFor(kid);
         } catch (RuntimeException e) {
-            throw new TouchQueIdJagException("temporarily_unavailable", "the identity provider's keys could not be read: " + e.getMessage());
+            throw new TouchqueIdJagException("temporarily_unavailable", "the identity provider's keys could not be read: " + e.getMessage());
         }
         if (key == null || !Jws.verify(alg, key, parts.input(), parts.signature())) throw bad("signature does not verify");
         long now = Instant.now().getEpochSecond();

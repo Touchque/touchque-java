@@ -5,11 +5,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.Assurance;
 import com.touchque.LoginDetail;
 import com.touchque.RiskReason;
-import com.touchque.TouchQueApiException;
-import com.touchque.TouchQueApprovalMismatchException;
-import com.touchque.TouchQueClient;
-import com.touchque.TouchQueConfigException;
-import com.touchque.TouchQueNetworkException;
+import com.touchque.TouchqueApiException;
+import com.touchque.TouchqueApprovalMismatchException;
+import com.touchque.TouchqueClient;
+import com.touchque.TouchqueConfigException;
+import com.touchque.TouchqueNetworkException;
 import com.touchque.crypto.Details;
 import com.touchque.internal.Json;
 import com.touchque.internal.SdkLog;
@@ -21,20 +21,20 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Framework-agnostic step-up guard (the Spring starter's {@code @RequireTouchQue} is a thin wrapper
- * over it). Contract, the same in every TouchQue server SDK:
+ * Framework-agnostic step-up guard (the Spring starter's {@code @RequireTouchque} is a thin wrapper
+ * over it). Contract, the same in every Touchque server SDK:
  * <ul>
  * <li>1st request: 202 {@code {"touchque": step, "token": ...}}; show the step in your UI;</li>
- * <li>repeat with the token (header {@code X-TouchQue-Token}): 202 while waiting, then the protected action runs once;</li>
+ * <li>repeat with the token (header {@code X-Touchque-Token}): 202 while waiting, then the protected action runs once;</li>
  * <li>refused: 403 / 408 / 423 / 429 {@code {"touchque": {"state": ...}}}.</li>
  * </ul>
  */
 public final class Guard {
-    public static final String TOKEN_HEADER = "X-TouchQue-Token";
-    public static final String OFFLINE_HEADER = "X-TouchQue-Offline";
-    public static final String CODE_HEADER = "X-TouchQue-Code";
-    public static final String CODE_TYPE_HEADER = "X-TouchQue-Code-Type";
-    public static final String BROWSER_HEADER = "X-TouchQue-Browser";
+    public static final String TOKEN_HEADER = "X-Touchque-Token";
+    public static final String OFFLINE_HEADER = "X-Touchque-Offline";
+    public static final String CODE_HEADER = "X-Touchque-Code";
+    public static final String CODE_TYPE_HEADER = "X-Touchque-Code-Type";
+    public static final String BROWSER_HEADER = "X-Touchque-Browser";
 
     private static final long TOKEN_TTL_MS = 10 * 60 * 1000;
     /** A real proof is a few hundred characters; anything far larger is not one. */
@@ -49,7 +49,7 @@ public final class Guard {
     private Guard() {
     }
 
-    /** Silent sign-ins for a guard or relay: {@code maxAgeSeconds} is your own limit on how long ago the last phone approval in that browser may be (0 = always ask; null = TouchQue's). */
+    /** Silent sign-ins for a guard or relay: {@code maxAgeSeconds} is your own limit on how long ago the last phone approval in that browser may be (0 = always ask; null = Touchque's). */
     public record SilentSignIn(Integer maxAgeSeconds) {
         public static SilentSignIn on() {
             return new SilentSignIn(null);
@@ -99,25 +99,25 @@ public final class Guard {
             return this;
         }
 
-        /** {@code X-TouchQue-Token}: the token from the last answer. */
+        /** {@code X-Touchque-Token}: the token from the last answer. */
         public Input token(String v) {
             this.token = v;
             return this;
         }
 
-        /** {@code X-TouchQue-Offline: 1}: switch to offline approval. */
+        /** {@code X-Touchque-Offline: 1}: switch to offline approval. */
         public Input offline(boolean v) {
             this.offline = v;
             return this;
         }
 
-        /** {@code X-TouchQue-Code}: the code from the phone. */
+        /** {@code X-Touchque-Code}: the code from the phone. */
         public Input code(String v) {
             this.code = v;
             return this;
         }
 
-        /** {@code X-TouchQue-Code-Type}: totp for the rolling time-based code. */
+        /** {@code X-Touchque-Code-Type}: totp for the rolling time-based code. */
         public Input codeType(String v) {
             this.codeType = v;
             return this;
@@ -129,7 +129,7 @@ public final class Guard {
             return this;
         }
 
-        /** {@code X-TouchQue-Browser}: the browser's device-bound key proof. */
+        /** {@code X-Touchque-Browser}: the browser's device-bound key proof. */
         public Input browserProof(String v) {
             this.browserProof = v;
             return this;
@@ -141,7 +141,7 @@ public final class Guard {
             return this;
         }
 
-        /** For your TouchQue Actions only ({@code event.context}). */
+        /** For your Touchque Actions only ({@code event.context}). */
         public Input context(Map<String, Object> v) {
             this.context = v;
             return this;
@@ -174,7 +174,7 @@ public final class Guard {
      * user/action/details, still waiting, and no offline switch or typed code. It can only read the
      * status, so relays do not count it against the per-user push limit.
      */
-    public static boolean isStatusPoll(TouchQueClient client, Input input) {
+    public static boolean isStatusPoll(TouchqueClient client, Input input) {
         if (empty(input.user) || empty(input.token) || input.offline || !empty(input.code)) return false;
         ObjectNode claims = Steps.verifyGuardToken(client.apiSecret(), input.token);
         if (claims == null || empty(Json.str(claims, "rid"))) return false;
@@ -188,11 +188,11 @@ public final class Guard {
 
     /**
      * Runs one step of the guard. Silent sign-ins: with {@code silentSignIn} set, a new attempt that
-     * carries a browser proof first asks TouchQue ({@code risk().check}); when it answers exactly
+     * carries a browser proof first asks Touchque ({@code risk().check}); when it answers exactly
      * {@code prompt: false} the guard approves at once with no push ({@code assurance.method} silent,
      * {@code confirmedVia} SILENT, {@code requestId} silent). Otherwise, and on any error, the usual push starts.
      */
-    public static Result run(TouchQueClient client, Input input) {
+    public static Result run(TouchqueClient client, Input input) {
         if (empty(input.user)) {
             return error(401, Step.of("blocked").withReason("unauthenticated"), "unauthenticated", "Sign in first.");
         }
@@ -255,7 +255,7 @@ public final class Guard {
                     putNullable(extra, "rid", rid);
                     putNullable(extra, "n", offline.challengeCode() != null ? offline.challengeCode() : n);
                     return issue(secret, input, details, Step.of("offline").withOffline(offline), extra);
-                } catch (TouchQueApiException e) {
+                } catch (TouchqueApiException e) {
                     String code = e.code() != null ? e.code() : e.error();
                     if (e.status() == 409 && "request_rejected".equals(code)) {
                         return issue(secret, input, details, Step.of("rejected").withRequestId(rid).withReason("request_rejected"), null);
@@ -278,7 +278,7 @@ public final class Guard {
                     try {
                         Approval approval = Steps.complete(client, rid, new CompleteExpectations(user, action, input.details, input.referenceId));
                         return new Result(200, approval, null, null);
-                    } catch (TouchQueApiException e) {
+                    } catch (TouchqueApiException e) {
                         if (e.status() != 409) throw e;
                         return issue(secret, input, details, Step.of("expired").withReason(e.code() != null ? e.code() : "already_used"), null);
                     }
@@ -307,14 +307,14 @@ public final class Guard {
             Step step = Steps.start(client, action, new StartOptions(user).details(details).referenceId(input.referenceId).ip(input.ip)
                     .userAgent(input.userAgent).enroll(input.enroll).browserProof(proof).context(input.context));
             return issue(secret, input, details, step, null);
-        } catch (TouchQueConfigException e) {
-            client.http().log().error("[TouchQue] guard misconfigured: " + SdkLog.describe(e));
+        } catch (TouchqueConfigException e) {
+            client.http().log().error("[Touchque] guard misconfigured: " + SdkLog.describe(e));
             return error(500, Step.of("blocked").withReason("misconfigured"), "misconfigured", "Two-factor approval is not configured correctly.");
-        } catch (TouchQueNetworkException | TouchQueApiException | TouchQueApprovalMismatchException e) {
+        } catch (TouchqueNetworkException | TouchqueApiException | TouchqueApprovalMismatchException e) {
             // A mismatch after the approval was consumed is answered like the other SDKs' guards, never thrown at the framework.
             // An outage (network, 5xx) is not the SDK's problem; anything else is worth a line, like the Node guard.
-            if (!(e instanceof TouchQueNetworkException) && !(e instanceof TouchQueApiException a && a.status() >= 500)) {
-                client.http().log().error("[TouchQue] approval failed: " + SdkLog.describe(e));
+            if (!(e instanceof TouchqueNetworkException) && !(e instanceof TouchqueApiException a && a.status() >= 500)) {
+                client.http().log().error("[Touchque] approval failed: " + SdkLog.describe(e));
             }
             return error(503, Step.of("blocked").withReason("unavailable"), "unavailable", "Two-factor approval is temporarily unavailable.");
         }
@@ -353,18 +353,18 @@ public final class Guard {
         return new Result(status, null, body, step);
     }
 
-    /** Asks TouchQue whether this known browser may sign in without the phone. Fails closed: only an answer of exactly {@code prompt: false} approves. */
-    private static Approval silentApproval(TouchQueClient client, Input input, String proof) {
+    /** Asks Touchque whether this known browser may sign in without the phone. Fails closed: only an answer of exactly {@code prompt: false} approves. */
+    private static Approval silentApproval(TouchqueClient client, Input input, String proof) {
         try {
             Risk.CheckResult res = client.risk().check(new Risk.CheckOptions(input.user).type(input.action).clientIp(input.ip).userAgent(input.userAgent)
                     .browserProof(proof).context(input.context != null && !input.context.isEmpty() ? input.context : null)
                     .maxAgeSeconds(input.silentSignIn.maxAgeSeconds()));
             if (res.prompt()) return null;
-            // Nothing was sent to the phone; reasons say why TouchQue let this known browser in.
+            // Nothing was sent to the phone; reasons say why Touchque let this known browser in.
             List<RiskReason> reasons = res.reasons();
             return new Approval("silent", input.user, input.action, new Assurance(false, "silent"), "SILENT", null, null, null, null, null, reasons);
         } catch (RuntimeException e) {
-            client.http().log().warn("[TouchQue] silent sign-in check failed, asking the phone: " + SdkLog.describe(e));
+            client.http().log().warn("[Touchque] silent sign-in check failed, asking the phone: " + SdkLog.describe(e));
             return null;
         }
     }

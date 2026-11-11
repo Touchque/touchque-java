@@ -83,7 +83,7 @@ class SafeGuardTest {
         JsonNode s = VECTORS.path("scheduleCall");
         assertEquals(s.path("expected").asText(), SafeApproval.scheduleCall(s.path("safe").asText(), s.path("governanceHash").asText(), strings(s.path("approvals"))));
         SafeTx bad = SafeTx.fromJson(VECTORS.path("vectors").get(0).path("safeTx")).operation(2);
-        assertThrows(TouchQueConfigException.class, () -> SafeApproval.safeTxHash(bad));
+        assertThrows(TouchqueConfigException.class, () -> SafeApproval.safeTxHash(bad));
     }
 
     @Test
@@ -94,7 +94,7 @@ class SafeGuardTest {
         JsonNode v = vector("bybit_pattern");
         api.opts(Map.of("safeTxView", Map.of("class", v.path("class").asText(), "flags", List.of("delegatecall"), "safeTxHash", v.path("safeTxHash").asText(),
                 "governanceHash", v.path("governanceHash").asText(), "purpose", v.path("purpose").asText())));
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         SafeTx tx = SafeTx.fromJson(v.path("safeTx"));
         JsonNode sent = tq.safeGuard().request(new SafeGuard.RequestOptions("treasurer@acme.com", "safe_payment", tx).referenceId("tx-1"));
         assertEquals(v.path("governanceHash").asText(), sent.path("safeTx").path("governanceHash").asText());
@@ -119,6 +119,6 @@ class SafeGuardTest {
 
         String again = tq.safeGuard().request(new SafeGuard.RequestOptions("treasurer@acme.com", "safe_payment", tx)).path("requestId").asText();
         api.reject(again);
-        assertThrows(TouchQueRejectedException.class, () -> tq.safeGuard().waitForApproval(again, Duration.ofSeconds(5), Duration.ofMillis(10)));
+        assertThrows(TouchqueRejectedException.class, () -> tq.safeGuard().waitForApproval(again, Duration.ofSeconds(5), Duration.ofMillis(10)));
     }
 }

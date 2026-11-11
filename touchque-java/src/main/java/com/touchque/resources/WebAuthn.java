@@ -3,7 +3,7 @@ package com.touchque.resources;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.util.Map;
 
 /**
@@ -12,10 +12,10 @@ import java.util.Map;
  * it for you).
  */
 public final class WebAuthn {
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.webauthn()}. */
-    public WebAuthn(TouchQueHttp http) {
+    public WebAuthn(TouchqueHttp http) {
         this.http = http;
     }
 
@@ -96,8 +96,8 @@ public final class WebAuthn {
      * without it any credential your API key can reach is deletable).
      */
     public boolean deleteCredential(String credentialRecordId, String externalUsername) {
-        String path = "/webauthn/credentials/" + TouchQueHttp.seg(credentialRecordId);
-        if (externalUsername != null) path += "?externalUsername=" + TouchQueHttp.seg(externalUsername);
+        String path = "/webauthn/credentials/" + TouchqueHttp.seg(credentialRecordId);
+        if (externalUsername != null) path += "?externalUsername=" + TouchqueHttp.seg(externalUsername);
         return Json.bool(http.delete(path), "deleted");
     }
 }

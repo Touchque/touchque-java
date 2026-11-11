@@ -3,8 +3,8 @@ package com.touchque.agents;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
-import com.touchque.TouchQueMcpAuthException;
+import com.touchque.TouchqueConfigException;
+import com.touchque.TouchqueMcpAuthException;
 import com.touchque.crypto.AgentKeys;
 import com.touchque.crypto.Jws;
 import com.touchque.internal.Json;
@@ -21,14 +21,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
- * For an MCP server whose authorization server is TouchQue SSO (Organization → MCP servers in
+ * For an MCP server whose authorization server is Touchque SSO (Organization → MCP servers in
  * the dashboard):
  * <ul>
  * <li>{@link #protectedResourceMetadata()} is its RFC 9728 document, served at
- * {@link #metadataPaths()}, so MCP clients find TouchQue and ask for a token for exactly this server;</li>
- * <li>{@link #verify} checks a request's token: signed by TouchQue, this issuer, audience = this
+ * {@link #metadataPaths()}, so MCP clients find Touchque and ask for a token for exactly this server;</li>
+ * <li>{@link #verify} checks a request's token: signed by Touchque, this issuer, audience = this
  * server, not expired, and for a DPoP-bound token a fresh proof for this request.
- * {@link TouchQueMcpAuthException} carries the status and the WWW-Authenticate header to send;</li>
+ * {@link TouchqueMcpAuthException} carries the status and the WWW-Authenticate header to send;</li>
  * <li>{@link #requireTool} refuses with 403 insufficient_scope naming the scope a tool needs.</li>
  * </ul>
  */
@@ -55,7 +55,7 @@ public final class McpAuth {
         private Function<String, JsonNode> fetch;
 
         /**
-         * @param issuer TouchQue SSO's MCP issuer, e.g. https://sso.touchque.com/mcp.
+         * @param issuer Touchque SSO's MCP issuer, e.g. https://sso.touchque.com/mcp.
          * @param resource this MCP server's URL (the audience of its tokens, RFC 8707).
          */
         public Options(String issuer, String resource) {
@@ -93,7 +93,7 @@ public final class McpAuth {
 
     public McpAuth(Options options) {
         if (options.issuer == null || options.issuer.isEmpty() || options.resource == null || options.resource.isEmpty()) {
-            throw new TouchQueConfigException("McpAuth needs issuer (TouchQue SSO's MCP issuer) and resource (this server's URL)");
+            throw new TouchqueConfigException("McpAuth needs issuer (Touchque SSO's MCP issuer) and resource (this server's URL)");
         }
         this.issuer = options.issuer.replaceAll("/+$", "");
         this.resource = options.resource;
@@ -141,7 +141,7 @@ public final class McpAuth {
         String scheme = (space < 0 ? auth : auth.substring(0, space)).toLowerCase(Locale.ROOT);
         String token = space < 0 ? "" : auth.substring(space + 1).trim();
         if (!(scheme.equals("bearer") || scheme.equals("dpop")) || token.chars().filter(c -> c == '.').count() != 2) {
-            throw fail(401, "missing_token", "A TouchQue access token is required", null);
+            throw fail(401, "missing_token", "A Touchque access token is required", null);
         }
         ObjectNode claims = claims(token);
         String jkt = Json.str(claims.get("cnf"), "jkt");
@@ -174,7 +174,7 @@ public final class McpAuth {
         requireScope(claims, scope);
     }
 
-    private TouchQueMcpAuthException fail(int status, String code, String message, String scope) {
+    private TouchqueMcpAuthException fail(int status, String code, String message, String scope) {
         List<String> parts = new ArrayList<>();
         parts.add("resource_metadata=\"" + metadataUrl() + "\"");
         if (!code.equals("missing_token")) {
@@ -182,7 +182,7 @@ public final class McpAuth {
             parts.add("error_description=\"" + message.replace('"', '\'') + "\"");
             if (scope != null) parts.add("scope=\"" + scope + "\"");
         }
-        return new TouchQueMcpAuthException(status, code, message, "Bearer " + String.join(", ", parts));
+        return new TouchqueMcpAuthException(status, code, message, "Bearer " + String.join(", ", parts));
     }
 
     private ObjectNode claims(String token) {
@@ -190,12 +190,12 @@ public final class McpAuth {
         if (parts == null) throw fail(401, "invalid_token", "The token is malformed", null);
         String alg = Json.str(parts.header(), "alg");
         if (!"at+jwt".equals(Json.str(parts.header(), "typ")) || !("RS256".equals(alg) || "ES256".equals(alg))) {
-            throw fail(401, "invalid_token", "Not a TouchQue access token", null);
+            throw fail(401, "invalid_token", "Not a Touchque access token", null);
         }
         JsonNode key;
         try {
             key = keyFor(orEmpty(Json.str(parts.header(), "kid")));
-        } catch (TouchQueMcpAuthException e) {
+        } catch (TouchqueMcpAuthException e) {
             throw e;
         } catch (RuntimeException e) {
             throw fail(401, "invalid_token", "The authorization server's keys could not be read", null);
@@ -268,7 +268,7 @@ public final class McpAuth {
         if (jti.isEmpty() || proofs.putIfAbsent(jti, now + 2 * skew) != null) throw reject("jti used");
     }
 
-    private TouchQueMcpAuthException reject(String why) {
+    private TouchqueMcpAuthException reject(String why) {
         return fail(401, "invalid_dpop_proof", "DPoP proof: " + why, null);
     }
 

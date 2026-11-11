@@ -47,7 +47,7 @@ public final class Support {
     }
 
     /**
-     * The shared Node fake TouchQue API (testing/fake-touchque-api.mjs): it verifies this
+     * The shared Node fake Touchque API (testing/fake-touchque-api.mjs): it verifies this
      * SDK's request signatures exactly like the real API, over a real HTTP round trip.
      */
     public static final class FakeApi implements AutoCloseable {
@@ -78,8 +78,8 @@ public final class Support {
             return shared;
         }
 
-        public TouchQueClient client() {
-            return new TouchQueClient(new TouchQueOptions().apiKey("tq_test_key").apiSecret("test_secret").baseUrl(baseUrl));
+        public TouchqueClient client() {
+            return new TouchqueClient(new TouchqueOptions().apiKey("tq_test_key").apiSecret("test_secret").baseUrl(baseUrl));
         }
 
         /** A /__test/ call of the fake: its JSON answer. */

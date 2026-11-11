@@ -3,7 +3,7 @@ package com.touchque.agents;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueAgentCardException;
+import com.touchque.TouchqueAgentCardException;
 import com.touchque.crypto.Jws;
 import com.touchque.crypto.SigningKey;
 import com.touchque.internal.Base64Url;
@@ -75,7 +75,7 @@ public final class AgentCard {
 
     /** A number as ECMAScript's Number::toString writes it (RFC 8785 §3.2.2.3). */
     public static String esNumber(double value) {
-        if (Double.isNaN(value) || Double.isInfinite(value)) throw new TouchQueAgentCardException("malformed", "a number is not finite");
+        if (Double.isNaN(value) || Double.isInfinite(value)) throw new TouchqueAgentCardException("malformed", "a number is not finite");
         if (value == 0) return "0";
         String sign = value < 0 ? "-" : "";
         // Shortest round-trip digits (Double.toString on Java 19+), rewritten in ECMAScript's layout.
@@ -155,7 +155,7 @@ public final class AgentCard {
         } else if (node.isNumber()) {
             b.append(esNumber(node.doubleValue()));
         } else {
-            throw new TouchQueAgentCardException("malformed", "cannot canonicalize this value");
+            throw new TouchqueAgentCardException("malformed", "cannot canonicalize this value");
         }
     }
 
@@ -168,8 +168,8 @@ public final class AgentCard {
 
     private static ObjectNode decode(String cardJson) {
         JsonNode parsed = Json.parse(cardJson);
-        if (parsed == null) throw new TouchQueAgentCardException("malformed", "the card is not JSON");
-        if (!(parsed instanceof ObjectNode o)) throw new TouchQueAgentCardException("malformed", "the card is not a JSON object");
+        if (parsed == null) throw new TouchqueAgentCardException("malformed", "the card is not JSON");
+        if (!(parsed instanceof ObjectNode o)) throw new TouchqueAgentCardException("malformed", "the card is not a JSON object");
         return o;
     }
 
@@ -183,15 +183,15 @@ public final class AgentCard {
         return url != null && CrossAppAccess.safeUrl(url) ? URI.create(url).getRawAuthority() : null;
     }
 
-    /** Checks the card's signatures (pass the raw JSON you received): the one that verified, or {@link TouchQueAgentCardException}. */
+    /** Checks the card's signatures (pass the raw JSON you received): the one that verified, or {@link TouchqueAgentCardException}. */
     public static Verification verify(String cardJson, VerifyOptions options) {
         VerifyOptions o = options != null ? options : new VerifyOptions();
         ObjectNode c = decode(cardJson);
-        if (!(c.get("signatures") instanceof ArrayNode sigs) || sigs.isEmpty()) throw new TouchQueAgentCardException("unsigned", "the card has no signatures");
+        if (!(c.get("signatures") instanceof ArrayNode sigs) || sigs.isEmpty()) throw new TouchqueAgentCardException("unsigned", "the card has no signatures");
         Function<String, JsonNode> fetch = o.fetch != null ? o.fetch : CrossAppAccess::getJson;
         String cardHost = hostOf(o.cardUrl);
         String payload = payload(c);
-        TouchQueAgentCardException last = new TouchQueAgentCardException("invalid_signature", "no signature verifies");
+        TouchqueAgentCardException last = new TouchqueAgentCardException("invalid_signature", "no signature verifies");
         for (JsonNode s : sigs) {
             String prot = Json.str(s, "protected");
             String sigText = Json.str(s, "signature");
@@ -217,7 +217,7 @@ public final class AgentCard {
             if (jwk == null && jku != null) {
                 String jkuHost = hostOf(jku);
                 if (jkuHost == null || (!jkuHost.equals(cardHost) && (o.trustedJkuHosts == null || !o.trustedJkuHosts.contains(jkuHost)))) {
-                    last = new TouchQueAgentCardException("untrusted_key", "jku " + jku + " is not on the card's host");
+                    last = new TouchqueAgentCardException("untrusted_key", "jku " + jku + " is not on the card's host");
                     continue;
                 }
                 try {
@@ -231,19 +231,19 @@ public final class AgentCard {
                         }
                     }
                 } catch (RuntimeException e) {
-                    last = new TouchQueAgentCardException("keys_unavailable", "the keys at " + jku + " could not be read: " + e.getMessage());
+                    last = new TouchqueAgentCardException("keys_unavailable", "the keys at " + jku + " could not be read: " + e.getMessage());
                     continue;
                 }
                 source = "jku";
             }
             if (jwk == null) {
-                if ("invalid_signature".equals(last.error())) last = new TouchQueAgentCardException("untrusted_key", "no trusted key " + kid);
+                if ("invalid_signature".equals(last.error())) last = new TouchqueAgentCardException("untrusted_key", "no trusted key " + kid);
                 continue;
             }
             byte[] sig = Base64Url.tryDecode(sigText);
             if (sig == null) continue;
             if (Jws.verify(alg, jwk, (prot + "." + payload).getBytes(StandardCharsets.US_ASCII), sig)) return new Verification(kid, alg, source);
-            last = new TouchQueAgentCardException("invalid_signature", "the signature does not match the card");
+            last = new TouchqueAgentCardException("invalid_signature", "the signature does not match the card");
         }
         throw last;
     }

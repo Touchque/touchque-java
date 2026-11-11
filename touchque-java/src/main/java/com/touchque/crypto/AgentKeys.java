@@ -2,7 +2,7 @@ package com.touchque.crypto;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Base64Url;
 import com.touchque.internal.Crypto;
 import com.touchque.internal.Json;
@@ -13,7 +13,7 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.spec.ECGenParameterSpec;
 
-/** Key helpers for AI agents ({@link com.touchque.agents.TouchQueAgent}): new key pairs and RFC 7638 thumbprints. */
+/** Key helpers for AI agents ({@link com.touchque.agents.TouchqueAgent}): new key pairs and RFC 7638 thumbprints. */
 public final class AgentKeys {
     private AgentKeys() {
     }
@@ -40,7 +40,7 @@ public final class AgentKeys {
                 BigInteger s = ((ECPrivateKey) kp.getPrivate()).getS();
                 d = Base64Url.encode(Keys.pad32(s.toByteArray()));
             } else {
-                throw new TouchQueConfigException("alg must be ES256 or EdDSA");
+                throw new TouchqueConfigException("alg must be ES256 or EdDSA");
             }
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException(e);

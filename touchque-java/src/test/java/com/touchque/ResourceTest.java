@@ -72,7 +72,7 @@ class ResourceTest {
 
     @Test
     void riskCheckAsksForANewBrowserAndSendsNothingToThePhone() {
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         Risk.CheckResult none = tq.risk().check(new Risk.CheckOptions(USER));
         assertEquals(List.of(true, "normal", "enforce", "CHK-2QX"), List.of(none.prompt(), none.assurance(), none.silentMode(), none.caseCode()));
         assertEquals(List.of("no_browser_key"), codes(none.reasons()));
@@ -81,7 +81,7 @@ class ResourceTest {
         assertEquals(Json.toNode(Map.of("externalUsername", USER, "type", "LOGIN", "clientIp", "203.0.113.7", "userAgent", "UA", "browserProof", proof, "maxAgeSeconds", 3600)),
                 api.get("/__test/last-check"));
         assertEquals(List.of("/risk/check", "/risk/check"), paths());
-        assertThrows(TouchQueConfigException.class, () -> tq.risk().check(new Risk.CheckOptions(USER).maxAgeSeconds(-1)));
+        assertThrows(TouchqueConfigException.class, () -> tq.risk().check(new Risk.CheckOptions(USER).maxAgeSeconds(-1)));
 
         api.opts(Map.of("silent", true));
         Risk.CheckResult silent = tq.risk().check(new Risk.CheckOptions(USER).browserProof(proof));
@@ -92,7 +92,7 @@ class ResourceTest {
 
     @Test
     void anApprovalMakesTheBrowserKnownUntilForgotten() {
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         String first = tq.login().request(new LoginRequestOptions(USER).browserProof(proof)).requestId();
         assertEquals(proof, loginRequests().get(0).get("browserProof").asText());
         assertTrue(tq.risk().browsers(USER).isEmpty());
@@ -122,7 +122,7 @@ class ResourceTest {
 
     @Test
     void otherwiseThePushStartsWithTheProofAndPollsNeverAskAgain() {
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         Guard.Result first = Guard.run(tq, g(proof, Guard.SilentSignIn.on(), "LOGIN", null));
         assertEquals(202, first.status());
         assertEquals(List.of("/risk/check", "/login/request"), paths());
@@ -139,7 +139,7 @@ class ResourceTest {
     @Test
     void silentSignInFailsClosedAndIsOffByDefault() throws Exception {
         api.opts(Map.of("silent", true));
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         JsonNode critical = Guard.run(tq, g(proof, Guard.SilentSignIn.on(), "SEND_MONEY", null)).body().get("touchque");
         assertEquals(List.of("waiting", "47"), List.of(critical.get("state").asText(), critical.get("number").asText()));
         api.reset();
@@ -160,7 +160,7 @@ class ResourceTest {
             try (Support.Stub stub = new Support.Stub(seen -> seen.path().startsWith("/risk/check")
                     ? (answer == null ? Support.Answer.json(500, Map.of("error", "boom")) : Support.Answer.json(200, answer))
                     : Support.Answer.json(200, Map.of("requestId", "r1", "expiresAt", "soon")))) {
-                TouchQueClient stubbed = new TouchQueClient(new TouchQueOptions().apiKey("tq_x").apiSecret("s").baseUrl(stub.baseUrl));
+                TouchqueClient stubbed = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret("s").baseUrl(stub.baseUrl));
                 assertEquals(202, Guard.run(stubbed, g(proof, Guard.SilentSignIn.on(), "LOGIN", null)).status());
             }
         }
@@ -169,13 +169,13 @@ class ResourceTest {
     @Test
     void neverLockedOut() {
         for (String u : List.of("ada@acme.com", "bo@acme.com", "cy@acme.com")) api.link(u);
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         JsonNode out1 = tq.recovery().setVouchers("ada@acme.com", List.of("bo@acme.com", "zed@acme.com"));
         assertTrue(out1.get("vouchers").get(0).get("eligible").asBoolean());
         assertEquals(List.of(false, "no_phone"), List.of(out1.get("vouchers").get(1).get("eligible").asBoolean(), out1.get("vouchers").get(1).get("reason").asText()));
         assertEquals("bo@acme.com", tq.recovery().vouchers("ada@acme.com").get("vouchers").get(0).get("externalUsername").asText());
 
-        TouchQueApiException e = assertThrows(TouchQueApiException.class, () -> tq.recovery().start(new Recovery.StartOptions("cy@acme.com")));
+        TouchqueApiException e = assertThrows(TouchqueApiException.class, () -> tq.recovery().start(new Recovery.StartOptions("cy@acme.com")));
         assertEquals(List.of(409, "not_enough_vouchers"), List.of(e.status(), e.code()));
 
         tq.recovery().setVouchers("ada@acme.com", List.of("bo@acme.com", "cy@acme.com"));
@@ -195,16 +195,16 @@ class ResourceTest {
         assertEquals(id, tq.recovery().list("ada@acme.com", false).get(0).get("recoveryId").asText());
 
         api.reset();
-        assertThrows(TouchQueConfigException.class, () -> tq.recovery().start(new Recovery.StartOptions("")));
-        assertThrows(TouchQueConfigException.class, () -> tq.recovery().status(""));
-        assertThrows(TouchQueConfigException.class, () -> tq.recovery().list(null, false));
+        assertThrows(TouchqueConfigException.class, () -> tq.recovery().start(new Recovery.StartOptions("")));
+        assertThrows(TouchqueConfigException.class, () -> tq.recovery().status(""));
+        assertThrows(TouchqueConfigException.class, () -> tq.recovery().list(null, false));
         assertTrue(api.calls().isEmpty());
     }
 
     @Test
     void helpDesk() {
         api.link("ayse@acme.com");
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         JsonNode s = tq.assist().open("ayse@acme.com", new Assist.Agent("Deniz Kaya", "IT help desk", null), "Ticket 4411");
         assertEquals(List.of("OPEN", true, true), List.of(s.get("status").asText(), s.get("notified").asBoolean(), s.get("phone").asBoolean()));
         String id = s.get("id").asText();
@@ -213,7 +213,7 @@ class ResourceTest {
         String rid = check.get("requestId").asText();
         api.post("/__test/assist", Map.of("requestId", rid, "action", "approve"));
         assertTrue(Assist.checkPassed(tq.assist().get(id), rid));
-        assertEquals(428, assertThrows(TouchQueApiException.class, () -> tq.assist().spend(id, rid, "reset_password")).status());
+        assertEquals(428, assertThrows(TouchqueApiException.class, () -> tq.assist().spend(id, rid, "reset_password")).status());
         assertFalse(Assist.checkPassed(tq.assist().spend(id, rid, "reset_2fa"), rid));
         assertEquals(id, tq.assist().list("ayse@acme.com", false).get(0).get("id").asText());
 
@@ -225,23 +225,23 @@ class ResourceTest {
         JsonNode unfrozen = tq.assist().unfreeze(id, unlock.get("requestId").asText());
         assertEquals(List.of(true, false), List.of(unfrozen.get("unfrozen").asBoolean(), unfrozen.get("session").get("frozen").asBoolean()));
         assertEquals("ENDED", tq.assist().end(id, null, null).get("status").asText());
-        assertEquals("assist_not_open", assertThrows(TouchQueApiException.class, () -> tq.assist().verify(id, "unlock", null, null)).code());
+        assertEquals("assist_not_open", assertThrows(TouchqueApiException.class, () -> tq.assist().verify(id, "unlock", null, null)).code());
 
         tq.auth().generateSecret("can@acme.com");
         JsonNode noPhone = tq.assist().open("can@acme.com", Assist.Agent.of("Deniz Kaya"), null, null, false);
         assertFalse(noPhone.get("phone").asBoolean());
-        TouchQueApiException e = assertThrows(TouchQueApiException.class, () -> tq.assist().verify(noPhone.get("id").asText(), "new_phone", null, null));
+        TouchqueApiException e = assertThrows(TouchqueApiException.class, () -> tq.assist().verify(noPhone.get("id").asText(), "new_phone", null, null));
         assertEquals(List.of("no_phone", "never_locked_out"), List.of(e.code(), e.route()));
-        assertThrows(TouchQueConfigException.class, () -> tq.assist().list(null, false));
+        assertThrows(TouchqueConfigException.class, () -> tq.assist().list(null, false));
     }
 
     @Test
     void mobileSdkServerSide() {
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         JsonNode first = tq.mobile().createEnrollment("ada@shop.example", false, null);
         assertTrue(first.get("enrollmentToken").asText().matches("^tqe_[A-Za-z0-9_-]{43}$"));
         JsonNode device = api.post("/__test/mobile-enroll", Map.of("enrollmentToken", first.get("enrollmentToken").asText(), "platform", "android"));
-        assertEquals("already_enrolled", assertThrows(TouchQueApiException.class, () -> tq.mobile().createEnrollment("ada@shop.example", false, null)).code());
+        assertEquals("already_enrolled", assertThrows(TouchqueApiException.class, () -> tq.mobile().createEnrollment("ada@shop.example", false, null)).code());
         JsonNode second = tq.mobile().createEnrollment("ada@shop.example", true, 300);
         assertEquals(device.get("deviceId").asText(), second.get("replacesDeviceId").asText());
         api.post("/__test/mobile-enroll", Map.of("enrollmentToken", second.get("enrollmentToken").asText()));
@@ -266,7 +266,7 @@ class ResourceTest {
         Map<String, Object> clear = new HashMap<>();
         clear.put("apns", null);
         assertEquals("webhook", tq.mobile().updateSettings(clear).get("push").get("ios").asText());
-        assertThrows(TouchQueConfigException.class, () -> tq.mobile().updateSettings(Map.of("nope", 1)));
+        assertThrows(TouchqueConfigException.class, () -> tq.mobile().updateSettings(Map.of("nope", 1)));
     }
 
     @Test
@@ -290,7 +290,7 @@ class ResourceTest {
 
     @Test
     void managementApiCalls() {
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         api.reset();
         tq.identity().users().list(Map.of("q", "ayse", "limit", 10));
         tq.identity().users().create(Map.of("email", "a@x.com", "passwordHash", "$2b$10$abc"));
@@ -338,9 +338,9 @@ class ResourceTest {
 
     @Test
     void passkeyBackendCalls() {
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         api.link("pk@acme.com");
-        TouchQueApiException e = assertThrows(TouchQueApiException.class, () -> tq.webauthn().registerOptions("pk@acme.com", true, null));
+        TouchqueApiException e = assertThrows(TouchqueApiException.class, () -> tq.webauthn().registerOptions("pk@acme.com", true, null));
         assertEquals(List.of(403, "enrollment_approval_required"), List.of(e.status(), e.code()));
         assertTrue(tq.webauthn().listCredentials("pk@acme.com").isEmpty());
         tq.webauthn().deleteCredential("cred 1", "pk@acme.com");

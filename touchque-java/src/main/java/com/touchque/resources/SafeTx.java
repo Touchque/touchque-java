@@ -48,7 +48,7 @@ public final class SafeTx {
     /**
      * @param chainId the chain id, a decimal string
      * @param safe the Safe's address
-     * @param guard the TouchQueSafeGuard installed on it
+     * @param guard the TouchqueSafeGuard installed on it
      */
     public SafeTx(String chainId, String safe, String guard) {
         this.chainId = chainId;

@@ -16,7 +16,7 @@ import java.util.List;
  * holds a hardware key (Secure Enclave / Android Keystore), every approval is signed over the request
  * id, the action type, the number-match code and a digest of the details the user was shown. The
  * proof arrives in the SUCCESS webhook ({@code approvalProof}) and in the consumed approval.
- * Verifying it does not require trusting TouchQue.
+ * Verifying it does not require trusting Touchque.
  */
 public final class ApprovalProof {
     private static final String MESSAGE_PREFIX = "touchque-approve:v2";

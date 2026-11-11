@@ -48,8 +48,8 @@ class LoggingTest {
         }
     }
 
-    private TouchQueClient client(String baseUrl, TouchQueOptions options) {
-        return new TouchQueClient(options.apiKey("tq_test_key").apiSecret("test_secret").baseUrl(baseUrl));
+    private TouchqueClient client(String baseUrl, TouchqueOptions options) {
+        return new TouchqueClient(options.apiKey("tq_test_key").apiSecret("test_secret").baseUrl(baseUrl));
     }
 
     @Test
@@ -81,22 +81,22 @@ class LoggingTest {
             assertEquals(List.of(), julLines); // silent by default
 
             ListLogger logger = new ListLogger();
-            TouchQueClient tq = client(api.baseUrl, new TouchQueOptions().logger(logger).debug(true));
+            TouchqueClient tq = client(api.baseUrl, new TouchqueOptions().logger(logger).debug(true));
             assertEquals(500, Guard.run(tq, new Guard.Input("log@acme.com", "NOT_DEFINED")).status());
             assertTrue(tq.login().verify(new LoginRequestOptions("log@acme.com").timeout(Duration.ofSeconds(10)).onChallenge(c -> {
                 api.approve(c.requestId());
                 throw new IllegalStateException("screen gone");
             })).approved());
             assertEquals(2, logger.lines.size(), logger.lines.toString());
-            assertTrue(logger.lines.get(0).startsWith("ERROR [TouchQue] guard misconfigured: TouchQueConfigException: "), logger.lines.get(0));
+            assertTrue(logger.lines.get(0).startsWith("ERROR [Touchque] guard misconfigured: TouchqueConfigException: "), logger.lines.get(0));
             assertTrue(logger.lines.get(0).contains("NOT_DEFINED"));
-            assertEquals("WARNING [TouchQue] onChallenge failed: IllegalStateException: screen gone", logger.lines.get(1));
+            assertEquals("WARNING [Touchque] onChallenge failed: IllegalStateException: screen gone", logger.lines.get(1));
             assertEquals(List.of(), julLines); // a logger given: nothing to "touchque"
 
             // debug with no logger: System.Logger "touchque" (java.util.logging here).
-            assertEquals(500, Guard.run(client(api.baseUrl, new TouchQueOptions().debug(true)), new Guard.Input("log@acme.com", "NOT_DEFINED")).status());
+            assertEquals(500, Guard.run(client(api.baseUrl, new TouchqueOptions().debug(true)), new Guard.Input("log@acme.com", "NOT_DEFINED")).status());
             assertEquals(1, julLines.size());
-            assertTrue(julLines.get(0).startsWith("SEVERE [TouchQue] guard misconfigured: TouchQueConfigException: "), julLines.get(0));
+            assertTrue(julLines.get(0).startsWith("SEVERE [Touchque] guard misconfigured: TouchqueConfigException: "), julLines.get(0));
         } finally {
             jul.removeHandler(handler);
             jul.setUseParentHandlers(parents);
@@ -109,19 +109,19 @@ class LoggingTest {
                 ? Support.Answer.json(200, Map.of("requestId", "r1", "expiresAt", "soon"))
                 : Support.Answer.json(500, Map.of("error", "boom")))) {
             ListLogger logger = new ListLogger();
-            TouchQueClient tq = client(stub.baseUrl, new TouchQueOptions().logger(logger));
+            TouchqueClient tq = client(stub.baseUrl, new TouchqueOptions().logger(logger));
 
             RelayHandler<String> relay = new RelayHandler<>(tq, new RelayOptions<String>(req -> req));
             assertEquals(1, logger.lines.size());
-            assertTrue(logger.lines.get(0).startsWith("WARNING [TouchQue] RelayHandler: POST /login takes the username from the request body; "),
+            assertTrue(logger.lines.get(0).startsWith("WARNING [Touchque] RelayHandler: POST /login takes the username from the request body; "),
                     logger.lines.get(0));
             assertEquals(502, relay.handle(new RelayRequest<>("GET", "/enroll/status", Json.object(), "203.0.113.7", "UA", h -> null, "u1")).status());
-            assertEquals("ERROR [TouchQue Relay Error] TouchQueApiException (boom): boom", logger.lines.get(1));
+            assertEquals("ERROR [Touchque Relay Error] TouchqueApiException (boom): boom", logger.lines.get(1));
 
             // The risk check fails: the guard asks the phone, and says why.
             Guard.Result r = Guard.run(tq, new Guard.Input("log@acme.com", "LOGIN").browserProof("proof").silentSignIn(Guard.SilentSignIn.on()));
             assertEquals(202, r.status());
-            assertEquals(List.of("WARNING [TouchQue] silent sign-in check failed, asking the phone: TouchQueApiException (boom): boom"), logger.lines.subList(2, logger.lines.size()));
+            assertEquals(List.of("WARNING [Touchque] silent sign-in check failed, asking the phone: TouchqueApiException (boom): boom"), logger.lines.subList(2, logger.lines.size()));
             // None of it names the user, the request or the IP.
             for (String line : logger.lines) assertTrue(!line.contains("log@acme.com") && !line.contains("u1") && !line.contains("203.0.113.7"), line);
         }
@@ -141,7 +141,7 @@ class LoggingTest {
             }
         };
         try (Support.Stub stub = new Support.Stub(seen -> Support.Answer.json(500, Map.of("error", "boom")))) {
-            TouchQueClient tq = client(stub.baseUrl, new TouchQueOptions().logger(broken));
+            TouchqueClient tq = client(stub.baseUrl, new TouchqueOptions().logger(broken));
             RelayHandler<String> relay = new RelayHandler<>(tq, new RelayOptions<String>(req -> req));
             assertEquals(502, relay.handle(new RelayRequest<>("GET", "/enroll/status", Json.object(), "203.0.113.7", "UA", h -> null, "u1")).status());
         }

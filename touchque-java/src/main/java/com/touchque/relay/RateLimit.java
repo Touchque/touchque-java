@@ -70,7 +70,7 @@ public final class RateLimit {
         }
     }
 
-    /** Fixed-window rate limiter: protects your server (and your TouchQue quota) from scripted abuse of public routes. */
+    /** Fixed-window rate limiter: protects your server (and your Touchque quota) from scripted abuse of public routes. */
     public static final class Limiter {
         private final long windowMs;
         private final int perIp;

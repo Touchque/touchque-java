@@ -55,8 +55,8 @@ class DeviceRiskTest {
 
     @Test
     void badInputFailsBeforeAnyRequest() {
-        assertThrows(TouchQueConfigException.class, () -> api.client().deviceRisk().check(DeviceRisk.CheckOptions.ofReport("r").event("tracking")));
-        assertThrows(TouchQueConfigException.class, () -> api.client().deviceRisk().getEvent("../users"));
+        assertThrows(TouchqueConfigException.class, () -> api.client().deviceRisk().check(DeviceRisk.CheckOptions.ofReport("r").event("tracking")));
+        assertThrows(TouchqueConfigException.class, () -> api.client().deviceRisk().getEvent("../users"));
     }
 
     @Test
@@ -110,6 +110,6 @@ class DeviceRiskTest {
             cursor = page.nextCursor();
         } while (cursor != null);
         assertEquals(List.of("dre_fakeEvent00000000003", "dre_fakeEvent00000000002", "dre_fakeEvent00000000001"), seen);
-        assertThrows(com.touchque.TouchQueConfigException.class, () -> new DeviceRisk.SearchOptions().limit(101));
+        assertThrows(com.touchque.TouchqueConfigException.class, () -> new DeviceRisk.SearchOptions().limit(101));
     }
 }

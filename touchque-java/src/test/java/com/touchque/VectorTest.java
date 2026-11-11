@@ -16,7 +16,7 @@ import com.touchque.crypto.Details;
 import com.touchque.flow.Steps;
 import com.touchque.internal.Crypto;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import com.touchque.resources.Risk;
 import com.touchque.resources.Webhook;
 import java.time.Instant;
@@ -37,7 +37,7 @@ class VectorTest {
         ObjectNode fx = Support.fixture("signature-vectors.json");
         assertFalse(fx.get("vectors").isEmpty());
         for (JsonNode v : fx.get("vectors")) {
-            String sig = TouchQueHttp.sign(fx.get("secret").asText(), v.get("method").asText(), v.get("signed_path").asText(), v.get("body").asText(),
+            String sig = TouchqueHttp.sign(fx.get("secret").asText(), v.get("method").asText(), v.get("signed_path").asText(), v.get("body").asText(),
                     v.get("timestamp").asText(), v.get("nonce").asText());
             assertEquals(v.get("expected_signature").asText(), sig);
         }
@@ -46,7 +46,7 @@ class VectorTest {
     @Test
     void webhookVectors() {
         ObjectNode fx = Support.fixture("webhook-vectors.json");
-        Webhook webhook = new TouchQueClient(new TouchQueOptions().apiKey("tq_x").apiSecret(fx.get("secret").asText())).webhook();
+        Webhook webhook = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret(fx.get("secret").asText())).webhook();
         for (JsonNode v : fx.get("vectors")) {
             String body = v.get("delivered_body").asText();
             assertEquals(v.get("expected_canonical").asText(), Webhook.canonicalize(body));
@@ -64,21 +64,21 @@ class VectorTest {
     @Test
     void webhookSignatureTimestampAndReplay() {
         String secret = "whsec_test";
-        Webhook webhook = new TouchQueClient(new TouchQueOptions().apiKey("tq_x").apiSecret(secret)).webhook();
+        Webhook webhook = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret(secret)).webhook();
         String now = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC).format(Instant.now());
         String fresh = signed(secret, Json.object().put("status", "SUCCESS").put("requestId", "r1").put("timestamp", now).put("jti", "j1").put("note", "Zoë Ångström / €"));
         Webhook.MemoryReplayCache cache = new Webhook.MemoryReplayCache();
         assertEquals("r1", Json.str(webhook.verify(fresh, null, 300, cache), "requestId"));
-        TouchQueWebhookReplayException replay = assertThrows(TouchQueWebhookReplayException.class, () -> webhook.verify(fresh, null, 300, cache));
+        TouchqueWebhookReplayException replay = assertThrows(TouchqueWebhookReplayException.class, () -> webhook.verify(fresh, null, 300, cache));
         assertEquals("j1", replay.jti());
 
         String old = signed(secret, Json.object().put("status", "SUCCESS").put("timestamp", "2020-01-01T00:00:00.000Z"));
-        assertThrows(TouchQueWebhookSignatureException.class, () -> webhook.verify(old, null));
+        assertThrows(TouchqueWebhookSignatureException.class, () -> webhook.verify(old, null));
         String tampered = fresh.replace("\"r1\"", "\"r2\"");
-        TouchQueWebhookSignatureException e = assertThrows(TouchQueWebhookSignatureException.class, () -> webhook.verify(tampered, null));
+        TouchqueWebhookSignatureException e = assertThrows(TouchqueWebhookSignatureException.class, () -> webhook.verify(tampered, null));
         assertFalse(e.getMessage().toLowerCase().contains("expected"));
-        assertThrows(TouchQueWebhookSignatureException.class, () -> webhook.verify("not json", null));
-        assertThrows(TouchQueWebhookSignatureException.class, () -> webhook.verify(signed(secret, Json.object().put("status", "SUCCESS")), null));
+        assertThrows(TouchqueWebhookSignatureException.class, () -> webhook.verify("not json", null));
+        assertThrows(TouchqueWebhookSignatureException.class, () -> webhook.verify(signed(secret, Json.object().put("status", "SUCCESS")), null));
     }
 
     @Test
@@ -92,7 +92,7 @@ class VectorTest {
                         Webhook.EVENT_ASSIST_UNFROZEN, Webhook.EVENT_ASSIST_CLAIM_CONFIRMED, Webhook.EVENT_ASSIST_CLAIM_UNVERIFIED));
 
         String secret = "whsec_test";
-        Webhook webhook = new TouchQueClient(new TouchQueOptions().apiKey("tq_x").apiSecret(secret)).webhook();
+        Webhook webhook = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret(secret)).webhook();
         String now = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC).format(Instant.now());
         ObjectNode recovery = webhook.verify(signed(secret, Json.object().put("event", "RECOVERY_COMPLETED").put("externalUsername", "ada@acme.com")
                 .put("integrationId", "i1").put("timestamp", now).put("jti", "j-rec").put("recoveryId", "rc1").put("status", "COMPLETED").put("method", "vouch")), null);
@@ -109,7 +109,7 @@ class VectorTest {
             JsonNode response = c.get("response");
             JsonNode expected = c.get("expected");
             try (Support.Stub stub = new Support.Stub(seen -> Support.Answer.json(200, response))) {
-                TouchQueClient tq = new TouchQueClient(new TouchQueOptions().apiKey("tq_x").apiSecret("s").baseUrl(stub.baseUrl));
+                TouchqueClient tq = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret("s").baseUrl(stub.baseUrl));
                 for (Risk.CheckResult res : List.of(Risk.parseCheck(response), tq.risk().check(new Risk.CheckOptions("jane@acme.com")))) {
                     assertEquals(expected.get("prompt").asBoolean(), res.prompt());
                     List<String> codes = new ArrayList<>();
@@ -163,20 +163,20 @@ class VectorTest {
                 new ApprovalToken.Expectation("ayse@example.com", "PAY_INVOICE", details), verifyAt);
         assertEquals(at.get("claims"), claims);
         String own = at.get("audience").asText();
-        assertThrows(TouchQueApprovalMismatchException.class, () -> ApprovalToken.verifyWith(at.get("tampered").asText(), jwks, own, null, verifyAt));
-        assertThrows(TouchQueApprovalMismatchException.class, () -> ApprovalToken.verifyWith(at.get("wrongType").asText(), jwks, own, null, verifyAt));
-        assertThrows(TouchQueApprovalMismatchException.class, () -> ApprovalToken.verifyWith(at.get("token").asText(), jwks, own, null, verifyAt.plusSeconds(3600)));
-        assertThrows(TouchQueApprovalMismatchException.class,
+        assertThrows(TouchqueApprovalMismatchException.class, () -> ApprovalToken.verifyWith(at.get("tampered").asText(), jwks, own, null, verifyAt));
+        assertThrows(TouchqueApprovalMismatchException.class, () -> ApprovalToken.verifyWith(at.get("wrongType").asText(), jwks, own, null, verifyAt));
+        assertThrows(TouchqueApprovalMismatchException.class, () -> ApprovalToken.verifyWith(at.get("token").asText(), jwks, own, null, verifyAt.plusSeconds(3600)));
+        assertThrows(TouchqueApprovalMismatchException.class,
                 () -> ApprovalToken.verifyWith(at.get("token").asText(), jwks, own, new ApprovalToken.Expectation("mallory@example.com", null, null), verifyAt));
         // The audience is required, and a token without aud is refused.
-        assertTrue(assertThrows(TouchQueApprovalMismatchException.class,
+        assertTrue(assertThrows(TouchqueApprovalMismatchException.class,
                 () -> ApprovalToken.verifyWith(at.get("token").asText(), jwks, "touchque:workspace:other", null, verifyAt)).getMessage().contains("another workspace"));
-        assertTrue(assertThrows(TouchQueApprovalMismatchException.class,
+        assertTrue(assertThrows(TouchqueApprovalMismatchException.class,
                 () -> ApprovalToken.verifyWith(at.get("token").asText(), jwks, null, null, verifyAt)).getMessage().contains("audience is required"));
-        assertTrue(assertThrows(TouchQueApprovalMismatchException.class,
+        assertTrue(assertThrows(TouchqueApprovalMismatchException.class,
                 () -> ApprovalToken.verifyWith(at.get("token").asText(), jwks, "", null, verifyAt)).getMessage().contains("audience is required"));
         JsonNode noAud = at.get("noAudience");
-        assertTrue(assertThrows(TouchQueApprovalMismatchException.class,
+        assertTrue(assertThrows(TouchqueApprovalMismatchException.class,
                 () -> ApprovalToken.verifyWith(noAud.get("token").asText(), noAud.get("jwks"), own, null, verifyAt)).getMessage().contains("names no workspace"));
 
         JsonNode authz = at.get("claims").get("authorization_details");
@@ -198,24 +198,24 @@ class VectorTest {
 
     @Test
     void configRefusesSwappedKeysAndPlainHttp() {
-        assertThrows(TouchQueConfigException.class, () -> new TouchQueClient(new TouchQueOptions().apiKey("secret").apiSecret("tq_key")));
-        assertThrows(TouchQueConfigException.class, () -> new TouchQueClient(new TouchQueOptions().apiKey("tq_k").apiSecret("s").baseUrl("http://api.example.com")));
-        assertNotNull(new TouchQueClient(new TouchQueOptions().apiKey("tq_k").apiSecret("s").baseUrl("http://127.0.0.1:9")));
+        assertThrows(TouchqueConfigException.class, () -> new TouchqueClient(new TouchqueOptions().apiKey("secret").apiSecret("tq_key")));
+        assertThrows(TouchqueConfigException.class, () -> new TouchqueClient(new TouchqueOptions().apiKey("tq_k").apiSecret("s").baseUrl("http://api.example.com")));
+        assertNotNull(new TouchqueClient(new TouchqueOptions().apiKey("tq_k").apiSecret("s").baseUrl("http://127.0.0.1:9")));
     }
 
     @Test
     void errorsCarryCodeCaseCodeAndRetryAfter() throws Exception {
         try (Support.Stub stub = new Support.Stub(seen -> new Support.Answer(429,
                 Map.of("code", "rate_limited", "error", "too_many_login_requests", "caseCode", "REF-USE"), Map.of("Retry-After", "60")))) {
-            TouchQueClient tq = new TouchQueClient(new TouchQueOptions().apiKey("tq_x").apiSecret("s").baseUrl(stub.baseUrl));
-            TouchQueApiException e = assertThrows(TouchQueApiException.class, () -> tq.login().request("a@b.com"));
+            TouchqueClient tq = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret("s").baseUrl(stub.baseUrl));
+            TouchqueApiException e = assertThrows(TouchqueApiException.class, () -> tq.login().request("a@b.com"));
             assertEquals(List.of(429, "rate_limited", "REF-USE", 60), List.of(e.status(), e.code(), e.caseCode(), e.retryAfter()));
         }
-        TouchQueClient down = new TouchQueClient(new TouchQueOptions().apiKey("tq_x").apiSecret("s").baseUrl("http://127.0.0.1:9"));
-        assertThrows(TouchQueNetworkException.class, () -> down.login().status("r1"));
+        TouchqueClient down = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret("s").baseUrl("http://127.0.0.1:9"));
+        assertThrows(TouchqueNetworkException.class, () -> down.login().status("r1"));
         try (Support.Stub stub = new Support.Stub(seen -> new Support.Answer(302, null, Map.of("Location", "https://evil.example/")))) {
-            TouchQueClient tq = new TouchQueClient(new TouchQueOptions().apiKey("tq_x").apiSecret("s").baseUrl(stub.baseUrl));
-            assertEquals(302, assertThrows(TouchQueApiException.class, () -> tq.login().status("r1")).status());
+            TouchqueClient tq = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret("s").baseUrl(stub.baseUrl));
+            assertEquals(302, assertThrows(TouchqueApiException.class, () -> tq.login().status("r1")).status());
         }
         assertTrue(true);
     }

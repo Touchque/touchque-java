@@ -11,7 +11,7 @@ import java.util.List;
  * showed ({@link com.touchque.crypto.ApprovalProof}). {@code provisional}: Vishing Shield, approved
  * during a call; let the user in, but treat the session as limited: critical actions are refused
  * until APPROVAL_RECONFIRMED, and APPROVAL_REVOKED means end it. {@code reasons}: silent sign-ins,
- * why TouchQue let this known browser in (nothing went to the phone).
+ * why Touchque let this known browser in (nothing went to the phone).
  */
 public record Approval(String requestId, String user, String action, Assurance assurance, String confirmedVia, JsonNode approvalProof,
                        Boolean provisional, Boolean revoked, String revokeReason, String reconfirmedAt, List<RiskReason> reasons) {

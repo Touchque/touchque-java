@@ -1,14 +1,14 @@
-# TouchQue for Java
+# Touchque for Java
 
-The official Java server SDK for [TouchQue](https://touchque.com). It covers push approvals with number
-matching, passkeys, silent sign-ins, offline codes, verified webhooks, TouchQue Actions, AI agent
-approvals, TouchQue Login (hosted sign-in and the Management API) and the server side of the
+The official Java server SDK for [Touchque](https://touchque.com). It covers push approvals with number
+matching, passkeys, silent sign-ins, offline codes, verified webhooks, Touchque Actions, AI agent
+approvals, Touchque Login (hosted sign-in and the Management API) and the server side of the
 Mobile SDK.
 
 | Artifact | What it is |
 | --- | --- |
 | `com.touchque:touchque-java` | The client. Java 17+, `java.net.http`, Jackson, unchecked exceptions, silent unless you pass a logger. |
-| `com.touchque:touchque-spring-boot-starter` | Spring Boot 3 auto-configuration: the client bean, `@RequireTouchQue` on controller methods, the relay routes `@touchque/web` needs, verified webhooks, TouchQue Login through Spring Security, MCP server protection. |
+| `com.touchque:touchque-spring-boot-starter` | Spring Boot 3 auto-configuration: the client bean, `@RequireTouchque` on controller methods, the relay routes `@touchque/web` needs, verified webhooks, Touchque Login through Spring Security, MCP server protection. |
 
 📘 Full docs: **[support.touchque.com](https://support.touchque.com)**
 
@@ -20,20 +20,23 @@ Maven:
 <dependency>
   <groupId>com.touchque</groupId>
   <artifactId>touchque-spring-boot-starter</artifactId>   <!-- Spring Boot (brings touchque-java) -->
-  <version>4.2.0</version>
+  <version>5.0.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("com.touchque:touchque-spring-boot-starter:4.2.0")   // Spring Boot
-implementation("com.touchque:touchque-java:4.2.0")                  // anything else
+implementation("com.touchque:touchque-spring-boot-starter:5.0.0")   // Spring Boot
+implementation("com.touchque:touchque-java:5.0.0")                  // anything else
 ```
+
+> **Not on Maven Central yet.** Until it is, run `mvn install` in a clone of
+> [this repository](https://github.com/Touchque/touchque-java); the dependency then resolves from your local repository.
 
 ## Setup
 
-Get an API key and secret from your [TouchQue dashboard](https://dashboard.touchque.com):
+Get an API key and secret from your [Touchque dashboard](https://dashboard.touchque.com):
 
 ```bash
 export TQ_API_KEY=tq_auth_your_key
@@ -43,11 +46,11 @@ export TQ_API_SECRET=your_api_secret
 The secret signs every request. Keep it on your server: never put it in a browser or an app.
 
 ```java
-var tq = new TouchQueClient();                                                           // TQ_API_KEY / TQ_API_SECRET
-var tq = new TouchQueClient(new TouchQueOptions().apiKey("tq_…").apiSecret("…"));         // or your own configuration
+var tq = new TouchqueClient();                                                           // TQ_API_KEY / TQ_API_SECRET
+var tq = new TouchqueClient(new TouchqueOptions().apiKey("tq_…").apiSecret("…"));         // or your own configuration
 ```
 
-`TouchQueClient` is thread-safe: create one and reuse it. In Spring Boot it is a bean, configured
+`TouchqueClient` is thread-safe: create one and reuse it. In Spring Boot it is a bean, configured
 with `touchque.api-key`, `touchque.api-secret` and `touchque.base-url`; anything you leave out
 comes from the environment.
 
@@ -57,14 +60,14 @@ Put one annotation on each protected controller method:
 
 ```java
 @PostMapping("/transfer")
-@RequireTouchQue("SEND_MONEY")
+@RequireTouchque("SEND_MONEY")
 Receipt transfer(@RequestBody Transfer t, Approval approval) {   // only reached once the user approved
     return payments.send(t);
 }
 
 @Bean
-TouchQueGuardOptions sendMoney() {   // what the phone shows for this action
-    return TouchQueGuardOptions.forAction("SEND_MONEY")
+TouchqueGuardOptions sendMoney() {   // what the phone shows for this action
+    return TouchqueGuardOptions.forAction("SEND_MONEY")
         .details(c -> List.of(LoginDetail.of("Amount", c.argument(Transfer.class).amount()),
                               LoginDetail.of("To", c.argument(Transfer.class).to())));
 }
@@ -72,10 +75,25 @@ TouchQueGuardOptions sendMoney() {   // what the phone shows for this action
 
 Until the user approves on their phone, the request gets `202 {"touchque": step, "token": "..."}`.
 Your page shows the step in its own design. It then sends the same request again with the header
-`X-TouchQue-Token` (`@touchque/web` does this for you). Once approved, the method runs once.
+`X-Touchque-Token` (`@touchque/web` does this for you). Once approved, the method runs once.
 By default, the approver is the signed-in user: their email, else sub, else name.
-`TouchQueGuardOptions` can name someone else (`user`), a `referenceId`, a `context` for your
-TouchQue Actions, `silentSignIn(Guard.SilentSignIn.on())` and `enroll(false)`.
+`TouchqueGuardOptions` can name someone else (`user`), a `referenceId`, a `context` for your
+Touchque Actions, `silentSignIn(Guard.SilentSignIn.on())` and `enroll(false)`.
+
+## Action types
+
+`"SEND_MONEY"` above is an action type: one kind of approval, with the title the phone shows and
+whether it is critical. Define each one once, in the dashboard (**Developers → Action types**)
+or from code:
+
+```java
+tq.actionTypes().define("SEND_MONEY", "Send money", true);   // type, name, critical
+```
+
+The guard refuses what is not ready. A name that is not defined is a setup error
+(`TouchqueConfigException`, "Unknown action …"): the guard answers 500 with `reason: "misconfigured"`. A type
+turned off in the dashboard answers 403 with `reason: "action_disabled"`, which stops that kind of
+approval at once, without a deploy.
 
 ## The three primitives (any framework)
 
@@ -100,8 +118,8 @@ Login.VerifyResult result = tq.login().verify(new LoginRequestOptions("jane@acme
     .onChallenge(c -> { if (c.challengeCode() != null) notify("Pick " + c.challengeCode() + " on your phone"); }));
 ```
 
-`verify` throws `TouchQueRejectedException`, `TouchQueTimeoutException` or
-`TouchQuePasskeyRequiredException`. On the last one, `reason()` is `policy` (approve with a
+`verify` throws `TouchqueRejectedException`, `TouchqueTimeoutException` or
+`TouchquePasskeyRequiredException`. On the last one, `reason()` is `policy` (approve with a
 passkey) or `step_up` (the user tapped Approve during a call, and the request now waits for a
 passkey). `tq.protect(request, () -> transfer())` runs your code only after an approval.
 
@@ -112,8 +130,8 @@ Declare the options as a bean. The starter mounts the routes at `touchque.relay.
 
 ```java
 @Bean
-RelayOptions<HttpServletRequest> touchQueRelay() {
-    return new RelayOptions<HttpServletRequest>(TouchQueSpring::user)
+RelayOptions<HttpServletRequest> touchqueRelay() {
+    return new RelayOptions<HttpServletRequest>(TouchqueSpring::user)
         // The user who already passed your password step. Binds /login and the offline routes to them.
         .getLoginUser(req -> (String) req.getSession().getAttribute("password_verified_user"))
         .onAuthenticated((req, response, info) -> signIn(req, info.externalUsername()))
@@ -136,7 +154,7 @@ own route.
 
 ```java
 @Bean
-TouchQueWebhookListener webhooks() {
+TouchqueWebhookListener webhooks() {
     return (event, request) -> {
         if (Webhook.EVENT_APPROVAL_REVOKED.equals(event.path("event").asText())) sessions.end(event.path("requestId").asText());
     };
@@ -162,7 +180,7 @@ starter registers an in-process replay cache. With several instances, declare yo
 ## Silent sign-ins
 
 ```java
-Risk.CheckResult risk = tq.risk().check(new Risk.CheckOptions(user).browserProof(request.getHeader("X-TouchQue-Browser")).clientIp(ip));
+Risk.CheckResult risk = tq.risk().check(new Risk.CheckOptions(user).browserProof(request.getHeader("X-Touchque-Browser")).clientIp(ip));
 if (!risk.prompt()) signIn(user);   // a known browser, nothing new: no push
 ```
 
@@ -173,13 +191,13 @@ them, for example after a password reset.
 ## Passkeys, offline codes, recovery, help desk
 
 - `tq.webauthn()`: options and verify for registration, second-factor and passwordless sign-in; list and delete passkeys.
-- `tq.offline()`: QR challenges and typed codes while the phone is offline. While TouchQue itself
+- `tq.offline()`: QR challenges and typed codes while the phone is offline. While Touchque itself
   is unreachable, `totpVerifiers` and `Offline.matchTotpVerifier` check time-based codes.
 - `tq.recovery()` (Never Locked Out): vouchers, `start` (show `bindUri` as a QR), `status`, `veto`.
 - `tq.assist()` (help desk): `open`, `verify` (a 2-digit code the agent reads to the person), `spend`, `unfreeze`, `end`.
 - `ApprovalProof.verify(proof, options)`: checks the phone's own signature over what it showed ("what you see is what you sign").
 
-## TouchQue Actions
+## Touchque Actions
 
 ```java
 tq.actions().deploy("night-alert", new Actions.DeployOptions().trigger("approval.decided")
@@ -188,7 +206,7 @@ JsonNode replay = tq.actions().dryRun(new Actions.Draft().trigger("login.request
 ```
 
 The resource also has `test`, `rollback`, `logs`, `metrics`, `templates` and `secrets()`.
-Action code is JavaScript that TouchQue runs in a sandbox, whatever language your server uses.
+Action code is JavaScript that Touchque runs in a sandbox, whatever language your server uses.
 Action types: `tq.actionTypes().define("SEND_MONEY", "Send money", true)`.
 
 ## AI agents
@@ -201,7 +219,7 @@ AgentKeys.Pair keys = AgentKeys.generate();             // where the agent runs;
 tq.agents().create(new Agents.CreateOptions("Invoice bot", List.of("PAY_INVOICE")).publicKey(keys.publicJwk()));
 
 // The agent (TQ_AGENT_ID, TQ_AGENT_KEY): private_key_jwt + DPoP, never your API key.
-var bot = new TouchQueAgent();
+var bot = new TouchqueAgent();
 var approved = bot.requireApproval("ayse@acme.com", "PAY_INVOICE", List.of(payment), null,
     s -> say("Type " + s.challengeCode() + " on your phone"), null);
 
@@ -216,22 +234,22 @@ The SDK also covers:
 - policies, blocks and the kill switch;
 - offline token checks (`verifyApprovalToken`).
 
-`TouchQueOrgAgent` is an organization's agent on TouchQue SSO. It gets DPoP tokens for one app
+`TouchqueOrgAgent` is an organization's agent on Touchque SSO. It gets DPoP tokens for one app
 and supports token exchange, CIBA, the token vault and shared accounts. It can use GitHub Actions
 or Kubernetes tokens instead of a stored key.
 
-`McpAuth` protects an MCP server whose authorization server is TouchQue SSO. In Spring Boot, set
+`McpAuth` protects an MCP server whose authorization server is Touchque SSO. In Spring Boot, set
 `touchque.mcp.issuer`, `touchque.mcp.resource` and `touchque.mcp.tools.<tool>=<scope>`. The
 starter then serves the RFC 9728 metadata and checks every request to the resource's path. Those
-requests carry a TouchQue token and DPoP proof, not a session: answers are 401/403 with
-`WWW-Authenticate`. In your handler, `mcpAuth.requireTool(TouchQueSpring.mcpClaims(request), tool)`
+requests carry a Touchque token and DPoP proof, not a session: answers are 401/403 with
+`WWW-Authenticate`. In your handler, `mcpAuth.requireTool(TouchqueSpring.mcpClaims(request), tool)`
 refuses a missing scope with 403. If Spring Security is on, permit the MCP path to pass through.
 Behind a proxy, set `server.forward-headers-strategy`, because a DPoP proof names the URL the
 client called.
 
 ### Cross App Access (ID-JAG) and A2A agent cards
 
-Cross App Access (ID-JAG) is an open IETF draft. An organization's identity provider (TouchQue
+Cross App Access (ID-JAG) is an open IETF draft. An organization's identity provider (Touchque
 SSO) can let one of its apps reach another service for a member, with no consent screen. The app
 trades the member's ID token for an ID-JAG, then trades the ID-JAG for an access token at the
 other service. If you run an authorization server, the verifier checks an ID-JAG (issuer, single
@@ -254,7 +272,7 @@ IdJagVerifier.Claims claims = verifier.verify(form.get("assertion"), authenticat
 AgentCard.verify(cardJson, new AgentCard.VerifyOptions().cardUrl("https://agent.example/.well-known/agent-card.json"));
 ```
 
-## TouchQue Login (hosted sign-in)
+## Touchque Login (hosted sign-in)
 
 Spring Boot, with Spring Security's OAuth2 client on the classpath:
 
@@ -265,12 +283,12 @@ touchque.login.client-secret=…
 touchque.login.scope=openid,profile,email,offline_access
 ```
 
-With no security chain of your own, every page now signs in with TouchQue Login. It uses PKCE,
+With no security chain of your own, every page now signs in with Touchque Login. It uses PKCE,
 also for confidential apps. The sign-in starts at `/oauth2/authorization/touchque`, and sign-out
-goes through TouchQue (`/logout`). In your own `SecurityFilterChain`, call
-`touchQueLogin.configure(http)`.
+goes through Touchque (`/logout`). In your own `SecurityFilterChain`, call
+`touchqueLogin.configure(http)`.
 
-Your API checks TouchQue Login access tokens with Spring Security's resource server. Set
+Your API checks Touchque Login access tokens with Spring Security's resource server. Set
 `touchque.login.domain` and `touchque.login.audience=https://api.acme.com` to get a `JwtDecoder`.
 It checks the tenant's keys (RS256), `typ` at+jwt, the issuer, expiry and that `aud` names your
 API. Scopes become `SCOPE_` authorities.
@@ -314,7 +332,7 @@ ResponseEntity<?> ssf(@RequestBody String body) {
         SecurityEventVerifier.SecurityEvent event = verifier.verify(body);
         if (handled.add(event.jti()) && "session-revoked".equals(event.name())) sessions.endFor(event.subject().path("email").asText());
         return ResponseEntity.accepted().build();
-    } catch (TouchQueSecurityEventException e) {
+    } catch (TouchqueSecurityEventException e) {
         // temporarily_unavailable: the keys could not be read; 503 and the transmitter tries again.
         int status = "temporarily_unavailable".equals(e.error()) ? 503 : 400;
         return ResponseEntity.status(status).body(Map.of("err", e.error(), "description", e.getMessage()));
@@ -348,15 +366,15 @@ JsonNode e = tq.mobile().createEnrollment(userId, false, null);   // the app spe
 Mobile.Push push = Mobile.pushFromWebhook(webhookEvent);           // a MOBILE_PUSH webhook → APNs payload / FCM data
 ```
 
-Or give TouchQue your APNs key or FCM service account (`updateSettings`), and TouchQue sends the
+Or give Touchque your APNs key or FCM service account (`updateSettings`), and Touchque sends the
 pushes for you.
 
 ## Pairing a browser by QR code
 
-Your page shows a QR code and the person scans it with the TouchQue app. The phone that scanned
+Your page shows a QR code and the person scans it with the Touchque app. The phone that scanned
 is the one asked to approve, with number matching. Your page sends the thumbprint of its browser
 key (`@touchque/web` `browserKey.thumbprint()`). The nonce in the QR never leaves your server:
-TouchQue keeps only its hash.
+Touchque keeps only its hash.
 
 ```java
 QrPairings.Created p = tq.qrPairings().create(new QrPairings.CreateOptions(thumb).clientIp(ip).userAgent(userAgent));
@@ -377,7 +395,7 @@ if ("confirmed".equals(now.path("state").asText()))
 
 ## A code typed back on the phone
 
-When a sign-in needs a code another service sent the person (a text message, WhatsApp, e-mail), ask them to type it on the phone instead. The phone encrypts it to a one-time key you made for this request: TouchQue only ever holds the ciphertext. Such a request lives 5 minutes.
+When a sign-in needs a code another service sent the person (a text message, WhatsApp, e-mail), ask them to type it on the phone instead. The phone encrypts it to a one-time key you made for this request: Touchque only ever holds the ciphertext. Such a request lives 5 minutes.
 
 ```java
 CodeReply.Key key = CodeReply.newKey();   // keep key.privateKey() for this request
@@ -388,7 +406,7 @@ String code = status.reply() == null ? null : CodeReply.open(key.privateKey(), s
 
 ## Safe Guard (Safe transactions approved on the phone)
 
-TouchQueSafeGuard is a transaction guard for a Safe: a transaction runs only with approvals signed by the P-256 keys on its approvers' phones. You send the raw transaction; the phone decodes it itself, shows its own rows and signs what it computed with a key only its biometrics unlock. Delegatecalls, changes to the Safe and proxy upgrades are governance: scheduled, time-locked and vetoable. A phone without that key yet gets `409 crypto_key_missing`.
+TouchqueSafeGuard is a transaction guard for a Safe: a transaction runs only with approvals signed by the P-256 keys on its approvers' phones. You send the raw transaction; the phone decodes it itself, shows its own rows and signs what it computed with a key only its biometrics unlock. Delegatecalls, changes to the Safe and proxy upgrades are governance: scheduled, time-locked and vetoable. A phone without that key yet gets `409 crypto_key_missing`.
 
 ```java
 SafeTx tx = new SafeTx("1", safe, guard).to(to).value("0").data(data).operation(0).nonce("42")
@@ -408,34 +426,34 @@ String payload = "approve".equals(purpose)
         : SafeApproval.scheduleCall(safe, check.governanceHash(), List.of(approval));   // a call to the guard; runs after govDelay
 ```
 
-`SafeApproval.verify` makes the guard's check off chain, so a co-signer or your own server never has to trust TouchQue: it computes the Safe transaction hash (EIP-712) and the governance hash from the raw fields, rebuilds the 149-byte message the phone signed and checks the P-256 signature. It refuses a high `s`, an approval that expired or is valid for more than a day, another approver index, and, when you pass `rows` or `displayDigest` from your own decoding, rows the phone did not show. Without `purpose` it accepts only an ordinary approval (`approve`): a governance approval carries no Safe nonce and only starts the guard's waiting time, so it passes only when you name `purpose("schedule")`. `reason()` is `approval_malformed`, `public_key_invalid`, `approver_index_mismatch`, `approval_expired`, `rows_differ`, `high_s` or `signature_invalid`. `SafeApproval.safeTxHash`, `governanceHash`, `message` and `displayDigest` are public too; `SafeTx.fromJson` reads the API's `safeTx` shape.
+`SafeApproval.verify` makes the guard's check off chain, so a co-signer or your own server never has to trust Touchque: it computes the Safe transaction hash (EIP-712) and the governance hash from the raw fields, rebuilds the 149-byte message the phone signed and checks the P-256 signature. It refuses a high `s`, an approval that expired or is valid for more than a day, another approver index, and, when you pass `rows` or `displayDigest` from your own decoding, rows the phone did not show. Without `purpose` it accepts only an ordinary approval (`approve`): a governance approval carries no Safe nonce and only starts the guard's waiting time, so it passes only when you name `purpose("schedule")`. `reason()` is `approval_malformed`, `public_key_invalid`, `approver_index_mismatch`, `approval_expired`, `rows_differ`, `high_s` or `signature_invalid`. `SafeApproval.safeTxHash`, `governanceHash`, `message` and `displayDigest` are public too; `SafeTx.fromJson` reads the API's `safeTx` shape.
 
 ## Errors, case codes and retries
 
 | Exception (all unchecked) | When |
 | --- | --- |
-| `TouchQueApiException` | TouchQue answered with an error: `status()`, `code()` (`device_not_linked`, `already_used`…), `caseCode()`, `retryAfter()`, `body()` |
-| `TouchQueNetworkException` | the request never reached TouchQue (safe to retry) |
-| `TouchQueRejectedException`, `TouchQueTimeoutException`, `TouchQuePasskeyRequiredException` | `verify` outcomes |
-| `TouchQueWebhookSignatureException`, `TouchQueWebhookReplayException` | webhooks |
-| `TouchQueApprovalException`, `TouchQueApprovalMismatchException` | agent approvals |
-| `TouchQueConfigException` | a missing key, an unknown action type, a wrong argument |
+| `TouchqueApiException` | Touchque answered with an error: `status()`, `code()` (`device_not_linked`, `already_used`…), `caseCode()`, `retryAfter()`, `body()` |
+| `TouchqueNetworkException` | the request never reached Touchque (safe to retry) |
+| `TouchqueRejectedException`, `TouchqueTimeoutException`, `TouchquePasskeyRequiredException` | `verify` outcomes |
+| `TouchqueWebhookSignatureException`, `TouchqueWebhookReplayException` | webhooks |
+| `TouchqueApprovalException`, `TouchqueApprovalMismatchException` | agent approvals |
+| `TouchqueConfigException` | a missing key, an unknown action type, a wrong argument |
 
-A feature your organization cannot use here throws a `TouchQueFeatureException` (still a `TouchQueApiException`, status 403) with `feature()` (`device_risk`, `ai_agents`…) and `featureReason()`: `TouchQueFeatureNotInPlanException`, `TouchQueFeatureReadOnlyException` or `TouchQueFeatureOffException` — not in its plan (an owner or admin adds it in the TouchQue dashboard), being turned off (reads work for 14 days, changes are refused) or switched off on this TouchQue deployment.
+A feature your organization cannot use here throws a `TouchqueFeatureException` (still a `TouchqueApiException`, status 403) with `feature()` (`device_risk`, `ai_agents`…) and `featureReason()`: `TouchqueFeatureNotInPlanException`, `TouchqueFeatureReadOnlyException` or `TouchqueFeatureOffException` — not in its plan (an owner or admin adds it in the Touchque dashboard), being turned off (reads work for 14 days, changes are refused) or switched off on this Touchque deployment.
 
 **"Why?" case codes.** Refusals and pushes carry a 6-character case code (`K7P-2QX`). Show it to
 the user ("Tell your support team: K7P-2QX"). Your team opens the whole decision by that code in
 the dashboard.
 
 **Retries.** Every request is signed with a one-time nonce, so the SDK never replays a request.
-Don't wrap the client in a retry layer. Retry `TouchQueNetworkException` at the call site, and on
+Don't wrap the client in a retry layer. Retry `TouchqueNetworkException` at the call site, and on
 429 or 423 wait `retryAfter()` seconds. The client never follows redirects and refuses plain
 `http://` except for localhost. If you pass your own `HttpClient`, build it with
 `HttpClient.Redirect.NEVER`.
 
 **Logging.** The SDK writes nothing to any log on its own. To see its own problems (a misconfigured
 guard, an `onChallenge` that threw, a relay error or a relay without `getLoginUser`, a silent
-sign-in check that failed), pass a `System.Logger`: `new TouchQueOptions().logger(System.getLogger("com.acme.touchque"))`,
+sign-in check that failed), pass a `System.Logger`: `new TouchqueOptions().logger(System.getLogger("com.acme.touchque"))`,
 or `debug(true)` for System.Logger `touchque`. In Spring Boot, set `touchque.debug=true` and the
 level with `logging.level.touchque`. Lines carry an error's class, code and message, never a
 request or a user.

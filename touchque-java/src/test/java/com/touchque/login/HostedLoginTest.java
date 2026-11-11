@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.Support;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Base64Url;
 import com.touchque.internal.Crypto;
 import com.touchque.internal.Json;
@@ -29,11 +29,11 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/** TouchQue Login against an in-process fake tenant: JWKS, /oauth/token with PKCE, /bc-authorize, My Account; and the sealed cookies. */
+/** Touchque Login against an in-process fake tenant: JWKS, /oauth/token with PKCE, /bc-authorize, My Account; and the sealed cookies. */
 class HostedLoginTest {
     static final String CLIENT_ID = "client-123";
 
-    /** A fake TouchQue Login tenant on a local port (its issuer is that address). */
+    /** A fake Touchque Login tenant on a local port (its issuer is that address). */
     static final class FakeTenant implements AutoCloseable {
         final KeyPair key = rsa();
         final Map<String, String[]> codes = new HashMap<>();
@@ -301,7 +301,7 @@ class HostedLoginTest {
         assertNull(LoginSession.unseal(sealed, secret, "tx"));
         assertNull(LoginSession.unseal(sealed.substring(0, sealed.length() - 2) + "AA", secret, "session"));
         assertNull(LoginSession.unseal(LoginSession.seal("x", secret, "session", -1), secret, "session"));
-        assertThrows(TouchQueConfigException.class, () -> LoginSession.seal("x", "short", "session", 60));
+        assertThrows(TouchqueConfigException.class, () -> LoginSession.seal("x", "short", "session", 60));
 
         String big = LoginSession.seal("y".repeat(6000), secret, "session", 60);
         Map<String, String> cookies = LoginSession.cookieValues("tq_session", big, List.of("tq_session"));

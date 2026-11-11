@@ -2,9 +2,9 @@ package com.touchque.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
+import com.touchque.TouchqueConfigException;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -12,9 +12,9 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * TouchQue Actions: your own code at points of the approval pipeline (before the push is sent, the
+ * Touchque Actions: your own code at points of the approval pipeline (before the push is sent, the
  * silent sign-in decision, an AI agent's request, after an approval, fraud reports, device and
- * recovery events). TouchQue runs it in a sandbox; this resource deploys, tests, replays and observes it.
+ * recovery events). Touchque runs it in a sandbox; this resource deploys, tests, replays and observes it.
  *
  * <pre>{@code
  * tq.actions().deploy("night-alert", new Actions.DeployOptions()
@@ -30,11 +30,11 @@ public final class Actions {
     private static final Pattern SLUG = Pattern.compile("^[a-z0-9][a-z0-9-]{1,62}$");
     private static final Pattern TEMPLATE = Pattern.compile("^[a-z_]{1,64}$");
 
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
     private final Secrets secrets;
 
     /** Internal: use {@code tq.actions()}. */
-    public Actions(TouchQueHttp http) {
+    public Actions(TouchqueHttp http) {
         this.http = http;
         this.secrets = new Secrets(http);
     }
@@ -235,7 +235,7 @@ public final class Actions {
      */
     public JsonNode deploy(String slug, DeployOptions o) {
         String path = slugPath(slug);
-        if ((o.code == null || o.code.isEmpty()) && o.template == null) throw new TouchQueConfigException("actions.deploy() needs code or template");
+        if ((o.code == null || o.code.isEmpty()) && o.template == null) throw new TouchqueConfigException("actions.deploy() needs code or template");
         ObjectNode body = Json.object();
         Json.put(body, "trigger", o.trigger);
         Json.put(body, "code", o.code);
@@ -345,7 +345,7 @@ public final class Actions {
 
     /** A template as plain code (to read, or to start a code Action from). */
     public JsonNode renderTemplate(String id, String trigger, Object params) {
-        if (id == null || !TEMPLATE.matcher(id).matches()) throw new TouchQueConfigException("Unknown template id");
+        if (id == null || !TEMPLATE.matcher(id).matches()) throw new TouchqueConfigException("Unknown template id");
         ObjectNode body = Json.object().put("trigger", trigger);
         body.set("params", params == null ? Json.object() : Json.toNode(params));
         return http.post("/actions/templates/" + id + "/render", body);
@@ -353,7 +353,7 @@ public final class Actions {
 
     private static String slugPath(String slug) {
         if (slug == null || !SLUG.matcher(slug).matches()) {
-            throw new TouchQueConfigException("An Action slug is 2-63 lowercase letters, digits or - (e.g. \"night-alert\")");
+            throw new TouchqueConfigException("An Action slug is 2-63 lowercase letters, digits or - (e.g. \"night-alert\")");
         }
         return "/actions/" + slug;
     }
@@ -382,14 +382,14 @@ public final class Actions {
     /** Secrets your Actions read or notify with. A value is encrypted and never readable again. */
     public static final class Secrets {
         private static final Pattern NAME = Pattern.compile("^[A-Z][A-Z0-9_]{0,63}$");
-        private final TouchQueHttp http;
+        private final TouchqueHttp http;
 
-        Secrets(TouchQueHttp http) {
+        Secrets(TouchqueHttp http) {
             this.http = http;
         }
 
         public JsonNode set(String name, String value) {
-            if (value == null || value.isEmpty()) throw new TouchQueConfigException("A secret value is a non-empty string");
+            if (value == null || value.isEmpty()) throw new TouchqueConfigException("A secret value is a non-empty string");
             JsonNode res = http.put(path(name), Json.object().put("value", value));
             return res.has("secret") ? res.get("secret") : res;
         }
@@ -405,7 +405,7 @@ public final class Actions {
 
         private static String path(String name) {
             if (name == null || !NAME.matcher(name).matches()) {
-                throw new TouchQueConfigException("A secret name is capital letters, digits or _ (e.g. SLACK_WEBHOOK_URL)");
+                throw new TouchqueConfigException("A secret name is capital letters, digits or _ (e.g. SLACK_WEBHOOK_URL)");
             }
             return "/actions/secrets/" + name;
         }

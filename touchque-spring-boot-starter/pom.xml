@@ -5,12 +5,12 @@
   <parent>
     <groupId>com.touchque</groupId>
     <artifactId>touchque-java-parent</artifactId>
-    <version>4.2.0</version>
+    <version>5.0.0</version>
   </parent>
 
   <artifactId>touchque-spring-boot-starter</artifactId>
-  <name>TouchQue Spring Boot starter</name>
-  <description>Spring Boot 3 auto-configuration for TouchQue: the client bean, @RequireTouchQue on controller methods, the relay routes @touchque/web calls, verified webhooks, TouchQue Login through Spring Security and MCP server protection.</description>
+  <name>Touchque Spring Boot starter</name>
+  <description>Spring Boot 3 auto-configuration for Touchque: the client bean, @RequireTouchque on controller methods, the relay routes @touchque/web calls, verified webhooks, Touchque Login through Spring Security and MCP server protection.</description>
 
   <dependencyManagement>
     <dependencies>

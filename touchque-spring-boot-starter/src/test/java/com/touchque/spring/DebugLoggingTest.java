@@ -3,7 +3,7 @@ package com.touchque.spring;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.touchque.TouchQueClient;
+import com.touchque.TouchqueClient;
 import com.touchque.relay.RelayHandler;
 import com.touchque.relay.RelayOptions;
 import java.util.List;
@@ -14,12 +14,12 @@ import org.junit.jupiter.api.Test;
 
 /** touchque.debug: the client bean logs the SDK's own problems to the logger "touchque"; off, it logs nothing. */
 class DebugLoggingTest {
-    private static TouchQueClient client(boolean debug) {
-        TouchQueProperties properties = new TouchQueProperties();
+    private static TouchqueClient client(boolean debug) {
+        TouchqueProperties properties = new TouchqueProperties();
         properties.setApiKey("tq_test_key");
         properties.setApiSecret("test_secret");
         properties.setDebug(debug);
-        return new TouchQueAutoConfiguration().touchQueClient(properties);
+        return new TouchqueAutoConfiguration().touchqueClient(properties);
     }
 
     @Test
@@ -49,7 +49,7 @@ class DebugLoggingTest {
             assertEquals(List.of(), lines);
             new RelayHandler<>(client(true), new RelayOptions<String>(req -> req));
             assertEquals(1, lines.size());
-            assertTrue(lines.get(0).startsWith("WARNING [TouchQue] RelayHandler: POST /login takes the username from the request body"), lines.get(0));
+            assertTrue(lines.get(0).startsWith("WARNING [Touchque] RelayHandler: POST /login takes the username from the request body"), lines.get(0));
         } finally {
             jul.removeHandler(handler);
             jul.setUseParentHandlers(parents);

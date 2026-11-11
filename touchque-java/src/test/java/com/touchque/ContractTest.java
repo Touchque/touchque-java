@@ -33,7 +33,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Against the shared fake TouchQue API: a real HTTP round trip, so request signing is verified
+ * Against the shared fake Touchque API: a real HTTP round trip, so request signing is verified
  * too. Same scenarios as the Node/Python/PHP/Go/.NET/Ruby step-up tests.
  */
 class ContractTest {
@@ -60,7 +60,7 @@ class ContractTest {
     @Test
     void loginRequestStatusAndReportFraud() {
         api.link("ada@acme.com");
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         Login.RequestResult sent = tq.login().request(new LoginRequestOptions("ada@acme.com").type("LOGIN").clientIp("203.0.113.7").userAgent("UA")
                 .details(List.of(LoginDetail.of("Amount", "250 EUR"))).challengeDigits(3).expiresIn(120).locale("en"));
         assertEquals("K7P-2QX", sent.caseCode());
@@ -74,14 +74,14 @@ class ContractTest {
         JsonNode report = tq.login().reportFraud(sent.requestId(), "chargeback", "card holder disputed it");
         assertTrue(report.get("reported").asBoolean() && !report.get("alreadyReported").asBoolean());
         assertTrue(tq.login().reportFraud(sent.requestId(), null, null).get("alreadyReported").asBoolean());
-        assertThrows(TouchQueConfigException.class, () -> tq.login().reportFraud("", null, null));
+        assertThrows(TouchqueConfigException.class, () -> tq.login().reportFraud("", null, null));
     }
 
     @Test
     void verifyRunsOnChallengeBeforeTheWaitAndThrowsOnRejection() {
         api.link("bo@acme.com");
         api.opts(Map.of("numberMatch", true));
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         AtomicReference<Login.VerifyChallenge> seen = new AtomicReference<>();
         Login.VerifyResult result = tq.login().verify(new LoginRequestOptions("bo@acme.com").timeout(Duration.ofSeconds(10)).onChallenge(c -> {
             seen.set(c);
@@ -92,27 +92,27 @@ class ContractTest {
         assertEquals("K7P-2QX", seen.get().caseCode());
         assertTrue(seen.get().reasons().stream().anyMatch(r -> r.code().equals("number_match_requested")));
 
-        assertThrows(TouchQueRejectedException.class, () -> tq.login().verify(new LoginRequestOptions("bo@acme.com").onChallenge(c -> api.reject(c.requestId()))));
+        assertThrows(TouchqueRejectedException.class, () -> tq.login().verify(new LoginRequestOptions("bo@acme.com").onChallenge(c -> api.reject(c.requestId()))));
 
         api.opts(Map.of("passkeyOnly", true));
-        assertEquals("policy", assertThrows(TouchQuePasskeyRequiredException.class, () -> tq.login().verify("bo@acme.com")).reason());
+        assertEquals("policy", assertThrows(TouchquePasskeyRequiredException.class, () -> tq.login().verify("bo@acme.com")).reason());
         api.opts(Map.of("passkeyOnly", false));
-        TouchQuePasskeyRequiredException escalated = assertThrows(TouchQuePasskeyRequiredException.class,
+        TouchquePasskeyRequiredException escalated = assertThrows(TouchquePasskeyRequiredException.class,
                 () -> tq.login().verify(new LoginRequestOptions("bo@acme.com").onChallenge(c -> api.escalate(c.requestId()))));
         assertEquals("step_up", escalated.reason());
-        assertThrows(TouchQueTimeoutException.class, () -> tq.login().verify(new LoginRequestOptions("bo@acme.com").timeout(Duration.ofMillis(500))));
+        assertThrows(TouchqueTimeoutException.class, () -> tq.login().verify(new LoginRequestOptions("bo@acme.com").timeout(Duration.ofMillis(500))));
     }
 
     @Test
     void unlinkedUserIsAClearApiError() {
-        TouchQueApiException e = assertThrows(TouchQueApiException.class, () -> api.client().login().request("nobody@acme.com"));
+        TouchqueApiException e = assertThrows(TouchqueApiException.class, () -> api.client().login().request("nobody@acme.com"));
         assertEquals(List.of(404, "device_not_linked"), List.of(e.status(), e.code()));
     }
 
     @Test
     void startCheckCompleteFullFlow() {
         api.link("jane@acme.com");
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         Step step = tq.start("SEND_MONEY", new StartOptions("jane@acme.com").details(List.of(LoginDetail.of(" Amount ", "250 EUR"))).referenceId("tx-9"));
         assertEquals(List.of("waiting", "47"), List.of(step.state(), step.number()));
         assertEquals(List.of(LoginDetail.of("Amount", "250 EUR")), step.details());
@@ -123,25 +123,25 @@ class ContractTest {
         Approval approval = tq.complete(step.requestId(), expect);
         assertEquals("push", approval.assurance().method());
         assertFalse(approval.assurance().phishingResistant());
-        assertEquals("already_used", assertThrows(TouchQueApiException.class, () -> tq.complete(step.requestId(), expect)).code());
+        assertEquals("already_used", assertThrows(TouchqueApiException.class, () -> tq.complete(step.requestId(), expect)).code());
     }
 
     @Test
     void completeRefusesADifferentAmountAndUnknownActionsAreConfigErrors() {
         api.link("jane2@acme.com");
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         Step step = tq.start("SEND_MONEY", new StartOptions("jane2@acme.com").details(List.of(LoginDetail.of("Amount", "250 EUR"))));
         api.approve(step.requestId());
-        assertThrows(TouchQueApprovalMismatchException.class,
+        assertThrows(TouchqueApprovalMismatchException.class,
                 () -> tq.complete(step.requestId(), new CompleteExpectations("jane2@acme.com", "SEND_MONEY", List.of(LoginDetail.of("Amount", "9999 EUR")), null)));
-        TouchQueConfigException e = assertThrows(TouchQueConfigException.class, () -> tq.start("NOT_DEFINED", new StartOptions("jane2@acme.com")));
+        TouchqueConfigException e = assertThrows(TouchqueConfigException.class, () -> tq.start("NOT_DEFINED", new StartOptions("jane2@acme.com")));
         assertTrue(e.getMessage().contains("NOT_DEFINED"));
     }
 
     @Test
     void anEmptyReferenceIdIsTheSameAsNone() {
         api.link("jane3@acme.com");
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         Step step = tq.start("SEND_MONEY", new StartOptions("jane3@acme.com").referenceId(""));
         api.approve(step.requestId());
         assertEquals("jane3@acme.com", tq.complete(step.requestId(), new CompleteExpectations("jane3@acme.com", "SEND_MONEY", null, "")).user());
@@ -156,7 +156,7 @@ class ContractTest {
         try (Support.Stub stub = new Support.Stub(seen -> Support.Answer.json(200, seen.path().startsWith("/login/status/")
                 ? Map.of("status", "CONFIRMED", "externalUsername", "mallory@acme.com", "type", "LOGIN")
                 : Map.of("consumed", true, "externalUsername", "mallory@acme.com", "type", "LOGIN")))) {
-            TouchQueClient tq = new TouchQueClient(new TouchQueOptions().apiKey("tq_test_key").apiSecret("test_secret").baseUrl(stub.baseUrl));
+            TouchqueClient tq = new TouchqueClient(new TouchqueOptions().apiKey("tq_test_key").apiSecret("test_secret").baseUrl(stub.baseUrl));
             ObjectNode claims = Json.object().put("u", "jane@acme.com").put("a", "LOGIN").put("d", "").put("st", "waiting").put("rid", "r-1")
                     .put("exp", System.currentTimeMillis() + 60_000);
             Guard.Result r = Guard.run(tq, g("jane@acme.com", Steps.signGuardToken("test_secret", claims)));
@@ -183,7 +183,7 @@ class ContractTest {
 
     @Test
     void actionTypesDefine() {
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         JsonNode t = tq.actionTypes().define("EXPORT", "Export data", null, true, new ActionTypes.SecondThought(List.of("safe_account"), "en"));
         assertTrue(t.get("critical").asBoolean());
         assertEquals(Json.parse("{\"type\":\"EXPORT\",\"name\":\"Export data\",\"critical\":true,\"secondThought\":{\"questions\":[\"safe_account\"],\"locale\":\"en\"}}"),
@@ -197,7 +197,7 @@ class ContractTest {
     void guardFullFlow() {
         api.link("guard@acme.com");
         api.opts(Map.of("numberMatch", true));
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         Guard.Result first = Guard.run(tq, g("guard@acme.com", null));
         assertEquals(202, first.status());
         assertEquals(List.of("waiting", "47"), List.of(step(first).get("state").asText(), step(first).get("number").asText()));
@@ -218,7 +218,7 @@ class ContractTest {
 
     @Test
     void guardEnrollThenOfflineCode() {
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         Guard.Result first = Guard.run(tq, g("new-offline@acme.com", null));
         assertEquals("enroll", step(first).get("state").asText());
         assertTrue(step(first).get("enroll").get("qrCodeDataUrl").asText().startsWith("data:image/png;base64,"));
@@ -238,7 +238,7 @@ class ContractTest {
     @Test
     void guardFrozenRateLimitedBlocked() {
         api.link("blocked@acme.com");
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         api.opts(Map.of("frozen", true));
         Guard.Result frozen = Guard.run(tq, g("blocked@acme.com", null));
         assertEquals(List.of(423, 900), List.of(frozen.status(), step(frozen).get("retryAfter").asInt()));
@@ -254,7 +254,7 @@ class ContractTest {
     @Test
     void qrPairingCreateScanThenAskThePhoneThatScanned() throws Exception {
         api.link("ayse@acme.com");
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         QrPairings.Created p = tq.qrPairings().create(new QrPairings.CreateOptions(THUMB).clientIp("203.0.113.7").userAgent("Mozilla/5.0").browser("Chrome 155").os("macOS 15"));
         assertEquals(QrPairings.uri(p.pairingId(), p.nonce(), THUMB), p.uri());
         assertTrue(p.uri().matches("^touchque://pair-browser\\?v=1&p=[\\w-]{22}&n=[\\w-]{43}&k=[\\w-]{43}$"), p.uri());
@@ -263,7 +263,7 @@ class ContractTest {
         String hash = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(p.nonce().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         assertEquals(hash, stored.get("nonceHash").asText());
         assertEquals("waiting", tq.qrPairings().get(p.pairingId()).get("state").asText());
-        TouchQueApiException early = assertThrows(TouchQueApiException.class, () -> tq.login().request(new LoginRequestOptions("ayse@acme.com").qrPairing(p.pairingId())));
+        TouchqueApiException early = assertThrows(TouchqueApiException.class, () -> tq.login().request(new LoginRequestOptions("ayse@acme.com").qrPairing(p.pairingId())));
         assertEquals("pairing_not_confirmed", early.code());
 
         api.post("/__test/qr-scan", Map.of("id", p.pairingId(), "user", "ayse@acme.com"));
@@ -278,24 +278,24 @@ class ContractTest {
     @Test
     void qrPairingRefuseAfterTheScanAndChecksBeforeTheCall() {
         api.link("ayse@acme.com");
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         QrPairings.Created p = tq.qrPairings().create(new QrPairings.CreateOptions(THUMB).ttlSeconds(60));
-        TouchQueApiException early = assertThrows(TouchQueApiException.class, () -> tq.qrPairings().refuse(p.pairingId(), "policy", "Not yet", null, null));
+        TouchqueApiException early = assertThrows(TouchqueApiException.class, () -> tq.qrPairings().refuse(p.pairingId(), "policy", "Not yet", null, null));
         assertEquals(List.of(409, "not_open"), List.of(early.status(), early.code()));
         api.post("/__test/qr-scan", Map.of("id", p.pairingId(), "user", "ayse@acme.com", "confirm", false));
         JsonNode refused = tq.qrPairings().refuse(p.pairingId(), "device_not_approved", "Ask IT to approve this computer.", null, "ABC-123");
         assertEquals(List.of("refused", "device_not_approved", "ABC-123"),
                 List.of(refused.get("state").asText(), refused.get("outcome").get("reason").asText(), refused.get("outcome").get("deviceCode").asText()));
-        assertThrows(TouchQueConfigException.class, () -> tq.qrPairings().create(new QrPairings.CreateOptions("short")));
-        assertThrows(TouchQueConfigException.class, () -> tq.qrPairings().create(new QrPairings.CreateOptions(THUMB).ttlSeconds(10)));
-        assertThrows(TouchQueConfigException.class, () -> tq.qrPairings().refuse(p.pairingId(), "nope", "x", null, null));
-        assertThrows(TouchQueConfigException.class, () -> tq.qrPairings().refuse(p.pairingId(), "other", " ", null, null));
+        assertThrows(TouchqueConfigException.class, () -> tq.qrPairings().create(new QrPairings.CreateOptions("short")));
+        assertThrows(TouchqueConfigException.class, () -> tq.qrPairings().create(new QrPairings.CreateOptions(THUMB).ttlSeconds(10)));
+        assertThrows(TouchqueConfigException.class, () -> tq.qrPairings().refuse(p.pairingId(), "nope", "x", null, null));
+        assertThrows(TouchqueConfigException.class, () -> tq.qrPairings().refuse(p.pairingId(), "other", " ", null, null));
     }
 
     @Test
     void codeReplyOpensOnlyWithTheOneTimeKeyForThatRequest() {
         api.link("ayse@acme.com");
-        TouchQueClient tq = api.client();
+        TouchqueClient tq = api.client();
         com.touchque.crypto.CodeReply.Key key = com.touchque.crypto.CodeReply.newKey();
         Login.RequestResult sent = tq.login().request(new LoginRequestOptions("ayse@acme.com").reply(key.publicKey(), "sms", "+**********26"));
         assertNull(tq.login().status(sent.requestId()).reply());

@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+         child.project.url.inherit.append.path="false">
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>com.touchque</groupId>
   <artifactId>touchque-java-parent</artifactId>
-  <version>4.2.0</version>
+  <version>5.0.0</version>
   <packaging>pom</packaging>
 
-  <name>TouchQue Java SDK (parent)</name>
-  <description>The official Java server SDK for TouchQue and its Spring Boot starter.</description>
+  <name>Touchque Java SDK (parent)</name>
+  <description>The official Java server SDK for Touchque and its Spring Boot starter.</description>
   <url>https://touchque.com</url>
 
   <licenses>
@@ -21,12 +22,16 @@
   <developers>
     <developer>
       <id>touchque</id>
-      <name>TouchQue</name>
+      <name>Touchque</name>
     </developer>
   </developers>
-  <scm>
+  <!-- The modules publish the url above and this scm as they are, with no artifactId appended. -->
+  <scm child.scm.url.inherit.append.path="false"
+       child.scm.connection.inherit.append.path="false"
+       child.scm.developerConnection.inherit.append.path="false">
     <url>https://github.com/Touchque/touchque-java</url>
     <connection>scm:git:https://github.com/Touchque/touchque-java.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/Touchque/touchque-java.git</developerConnection>
   </scm>
 
   <modules>

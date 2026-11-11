@@ -1,6 +1,6 @@
 package com.touchque.internal;
 
-import com.touchque.TouchQueApiException;
+import com.touchque.TouchqueApiException;
 
 /**
  * The SDK's own problems (a misconfigured guard, an onChallenge that threw, a relay error, a
@@ -30,7 +30,7 @@ public final class SdkLog {
     public static String describe(Throwable e) {
         if (e == null) return "unknown error";
         String code = null;
-        if (e instanceof TouchQueApiException a) code = a.code() != null ? a.code() : a.error();
+        if (e instanceof TouchqueApiException a) code = a.code() != null ? a.code() : a.error();
         return e.getClass().getSimpleName() + (code != null && !code.isEmpty() ? " (" + code + ")" : "") + ": " + e.getMessage();
     }
 

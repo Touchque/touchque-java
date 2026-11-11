@@ -2,18 +2,18 @@ package com.touchque.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueConfigException;
-import com.touchque.TouchQueRejectedException;
-import com.touchque.TouchQueTimeoutException;
+import com.touchque.TouchqueConfigException;
+import com.touchque.TouchqueRejectedException;
+import com.touchque.TouchqueTimeoutException;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.time.Duration;
 import java.time.Instant;
 
 /**
- * Safe Guard: a Safe transaction approved on the approver's phone for TouchQueSafeGuard (the guard on your
+ * Safe Guard: a Safe transaction approved on the approver's phone for TouchqueSafeGuard (the guard on your
  * Safe). You send the raw transaction; the phone gets the raw fields only, decodes them itself, shows its own
- * rows and signs, with a key only its biometrics unlock, a 105-byte approval of the hash it computed. TouchQue
+ * rows and signs, with a key only its biometrics unlock, a 105-byte approval of the hash it computed. Touchque
  * never holds a key that can approve.
  * <ol>
  * <li>{@link #request} asks the phone (same pipeline as {@code login().request}: risk engine, push limit,
@@ -27,10 +27,10 @@ import java.time.Instant;
  * </ol>
  */
 public final class SafeGuard {
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
 
     /** Internal: use {@code tq.safeGuard()}. */
-    public SafeGuard(TouchQueHttp http) {
+    public SafeGuard(TouchqueHttp http) {
         this.http = http;
     }
 
@@ -75,13 +75,13 @@ public final class SafeGuard {
 
     /**
      * Asks the approver's phone to approve a Safe transaction: {@code requestId}, {@code expiresAt},
-     * {@code caseCode} and {@code safeTx} (TouchQue's own decoding: {@code class}, {@code flags},
+     * {@code caseCode} and {@code safeTx} (Touchque's own decoding: {@code class}, {@code flags},
      * {@code safeTxHash}, {@code governanceHash}, {@code rows}; the phone decodes for itself).
      */
     public JsonNode request(RequestOptions o) {
-        if (o == null || o.externalUsername == null || o.externalUsername.isEmpty()) throw new TouchQueConfigException("safeGuard.request() needs externalUsername.");
-        if (o.type == null || o.type.isEmpty()) throw new TouchQueConfigException("safeGuard.request() needs type: an action type from your dashboard.");
-        if (o.safeTx == null) throw new TouchQueConfigException("safeGuard.request() needs a SafeTx.");
+        if (o == null || o.externalUsername == null || o.externalUsername.isEmpty()) throw new TouchqueConfigException("safeGuard.request() needs externalUsername.");
+        if (o.type == null || o.type.isEmpty()) throw new TouchqueConfigException("safeGuard.request() needs type: an action type from your dashboard.");
+        if (o.safeTx == null) throw new TouchqueConfigException("safeGuard.request() needs a SafeTx.");
         ObjectNode body = Json.object().put("externalUsername", o.externalUsername).put("type", o.type);
         body.set("safeTx", o.safeTx.toJson());
         Json.put(body, "referenceId", o.referenceId);
@@ -97,16 +97,16 @@ public final class SafeGuard {
      * {@code approverIndex} and, once approved, {@code approval} (105 bytes, 0x hex) and {@code expiresAt}.
      */
     public JsonNode status(String requestId) {
-        if (requestId == null || requestId.isEmpty()) throw new TouchQueConfigException("safeGuard.status() needs a requestId.");
-        return http.get("/safe-guard/approvals/" + TouchQueHttp.seg(requestId));
+        if (requestId == null || requestId.isEmpty()) throw new TouchqueConfigException("safeGuard.status() needs a requestId.");
+        return http.get("/safe-guard/approvals/" + TouchqueHttp.seg(requestId));
     }
 
     /**
      * Polls until the phone approved and returns the status with the approval. Null durations take the
      * defaults (5 minutes, the request's own life; 1.5 s).
      *
-     * @throws TouchQueRejectedException the person said no
-     * @throws TouchQueTimeoutException it expired or the timeout passed
+     * @throws TouchqueRejectedException the person said no
+     * @throws TouchqueTimeoutException it expired or the timeout passed
      */
     public JsonNode waitForApproval(String requestId, Duration timeout, Duration pollInterval) {
         Duration limit = timeout != null ? timeout : Duration.ofMinutes(5);
@@ -118,14 +118,14 @@ public final class SafeGuard {
                 case "CONFIRMED":
                     return s;
                 case "REJECTED":
-                    throw new TouchQueRejectedException(requestId);
+                    throw new TouchqueRejectedException(requestId);
                 case "EXPIRED":
-                    throw new TouchQueTimeoutException("TouchQue: request '" + requestId + "' expired before it was approved.", requestId);
+                    throw new TouchqueTimeoutException("Touchque: request '" + requestId + "' expired before it was approved.", requestId);
                 default:
                     break;
             }
             if (Instant.now().isAfter(deadline)) {
-                throw new TouchQueTimeoutException("TouchQue: Safe Guard approval '" + requestId + "' was not given within " + limit.toSeconds() + "s.", requestId);
+                throw new TouchqueTimeoutException("Touchque: Safe Guard approval '" + requestId + "' was not given within " + limit.toSeconds() + "s.", requestId);
             }
             Login.sleep(interval);
         }

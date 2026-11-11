@@ -2,7 +2,7 @@ package com.touchque.crypto;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.touchque.TouchQueApprovalMismatchException;
+import com.touchque.TouchqueApprovalMismatchException;
 import com.touchque.internal.Json;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 /**
  * What a partner's server checks before executing what an AI agent asked for: the approval token's
  * claims match the transaction (person, action type, authorization details) and, offline, its ES256
- * signature against TouchQue's keys ({@code GET /agents/jwks.json}). {@code tq.agents().redeemApproval}
+ * signature against Touchque's keys ({@code GET /agents/jwks.json}). {@code tq.agents().redeemApproval}
  * makes a token single-use.
  */
 public final class ApprovalToken {
@@ -40,7 +40,7 @@ public final class ApprovalToken {
     /** Header and claims WITHOUT checking the signature. */
     public static Decoded decode(String token) {
         Jws.Parts parts = Jws.split(token);
-        if (parts == null) throw new TouchQueApprovalMismatchException("not an approval token");
+        if (parts == null) throw new TouchqueApprovalMismatchException("not an approval token");
         return new Decoded(parts.header(), parts.claims());
     }
 
@@ -58,17 +58,17 @@ public final class ApprovalToken {
         return details.size() == 1 && partial(details.get(0), exp);
     }
 
-    /** Throws {@link TouchQueApprovalMismatchException} unless the claims say what you expect. */
+    /** Throws {@link TouchqueApprovalMismatchException} unless the claims say what you expect. */
     public static void assertMatches(JsonNode claims, Expectation expect) {
         if (expect == null) return;
         if (expect.user() != null && !expect.user().equals(Json.str(claims, "sub"))) {
-            throw new TouchQueApprovalMismatchException("the approval is for another person");
+            throw new TouchqueApprovalMismatchException("the approval is for another person");
         }
         if (expect.type() != null && !expect.type().equals(Json.str(claims, "type"))) {
-            throw new TouchQueApprovalMismatchException("the approval is for another action type (" + Json.str(claims, "type") + ")");
+            throw new TouchqueApprovalMismatchException("the approval is for another action type (" + Json.str(claims, "type") + ")");
         }
         if (expect.authorizationDetails() != null && !matches(claims.get("authorization_details"), expect.authorizationDetails())) {
-            throw new TouchQueApprovalMismatchException("the approved details differ from what you are about to execute");
+            throw new TouchqueApprovalMismatchException("the approved details differ from what you are about to execute");
         }
     }
 
@@ -86,12 +86,12 @@ public final class ApprovalToken {
 
     public static ObjectNode verifyWith(String token, JsonNode jwks, String audience, Expectation expect, Instant now) {
         if (audience == null || audience.isEmpty()) {
-            throw new TouchQueApprovalMismatchException("audience is required: your workspace's touchque:workspace:<id> (tq.agents().approvalAudience())");
+            throw new TouchqueApprovalMismatchException("audience is required: your workspace's touchque:workspace:<id> (tq.agents().approvalAudience())");
         }
         Jws.Parts parts = Jws.split(token);
-        if (parts == null) throw new TouchQueApprovalMismatchException("not an approval token");
+        if (parts == null) throw new TouchqueApprovalMismatchException("not an approval token");
         if (!"touchque-approval+jwt".equals(Json.str(parts.header(), "typ")) || !"ES256".equals(Json.str(parts.header(), "alg"))) {
-            throw new TouchQueApprovalMismatchException("not an approval token (typ/alg)");
+            throw new TouchqueApprovalMismatchException("not an approval token (typ/alg)");
         }
         String kid = Json.str(parts.header(), "kid");
         JsonNode jwk = null;
@@ -101,14 +101,14 @@ public final class ApprovalToken {
                 if (kid != null && kid.equals(Json.str(k, "kid")) && "EC".equals(Json.str(k, "kty")) && "P-256".equals(Json.str(k, "crv"))) jwk = k;
             }
         }
-        if (jwk == null) throw new TouchQueApprovalMismatchException("signed by an unknown key");
-        if (!Jws.verify("ES256", jwk, parts.input(), parts.signature())) throw new TouchQueApprovalMismatchException("the signature does not verify");
+        if (jwk == null) throw new TouchqueApprovalMismatchException("signed by an unknown key");
+        if (!Jws.verify("ES256", jwk, parts.input(), parts.signature())) throw new TouchqueApprovalMismatchException("the signature does not verify");
         long at = (now != null ? now : Instant.now()).getEpochSecond();
         Long exp = Json.lng(parts.claims(), "exp");
-        if (exp == null || exp + 30 < at) throw new TouchQueApprovalMismatchException("the approval token expired");
+        if (exp == null || exp + 30 < at) throw new TouchqueApprovalMismatchException("the approval token expired");
         String aud = Json.str(parts.claims(), "aud");
-        if (aud == null || aud.isEmpty()) throw new TouchQueApprovalMismatchException("the approval token names no workspace");
-        if (!audience.equals(aud)) throw new TouchQueApprovalMismatchException("the approval token is for another workspace");
+        if (aud == null || aud.isEmpty()) throw new TouchqueApprovalMismatchException("the approval token names no workspace");
+        if (!audience.equals(aud)) throw new TouchqueApprovalMismatchException("the approval token is for another workspace");
         assertMatches(parts.claims(), expect);
         return parts.claims();
     }

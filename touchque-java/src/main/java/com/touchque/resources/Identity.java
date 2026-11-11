@@ -3,7 +3,7 @@ package com.touchque.resources;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.internal.Json;
-import com.touchque.internal.TouchQueHttp;
+import com.touchque.internal.TouchqueHttp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * TouchQue Login Management API: your customers' accounts, roles, business-customer organizations,
+ * Touchque Login Management API: your customers' accounts, roles, business-customer organizations,
  * apps, APIs, connections and the tenant itself, from your server with your workspace key. Bodies
  * and queries are any object (a Map, a record, a JsonNode) with the API's camelCase fields; answers
  * are the API's JSON.
@@ -23,7 +23,7 @@ import java.util.Map;
  * }</pre>
  */
 public final class Identity {
-    private final TouchQueHttp http;
+    private final TouchqueHttp http;
     private final Users users;
     private final Jobs imports;
     private final Jobs exports;
@@ -35,7 +35,7 @@ public final class Identity {
     private final Crud customDomains;
 
     /** Internal: use {@code tq.identity()}. */
-    public Identity(TouchQueHttp http) {
+    public Identity(TouchqueHttp http) {
         this.http = http;
         this.users = new Users(http);
         this.imports = new Jobs(http, "imports");
@@ -89,7 +89,7 @@ public final class Identity {
         return http.get("/identity/tenant");
     }
 
-    /** Turns TouchQue Login on (slug, displayName) or changes its settings. */
+    /** Turns Touchque Login on (slug, displayName) or changes its settings. */
     public JsonNode updateTenant(Object body) {
         return http.put("/identity/tenant", Json.toNode(body));
     }
@@ -101,7 +101,7 @@ public final class Identity {
 
     /**
      * The phone app the hosted pages tell customers to approve on ("Approve on the Acme app"). null:
-     * your brand name when the Mobile SDK is set up, else TouchQue ({@code approverApp} in the tenant shows which).
+     * your brand name when the Mobile SDK is set up, else Touchque ({@code approverApp} in the tenant shows which).
      */
     public JsonNode setApproverAppName(String name) {
         ObjectNode branding = Json.object();
@@ -122,7 +122,7 @@ public final class Identity {
 
     /** Checks a verified custom domain's certificate at the sign-in edge now ({@code certificate}: pending | active | error). */
     public JsonNode checkDomainCertificate(String domainId) {
-        return http.post("/identity/custom-domains/" + TouchQueHttp.seg(domainId) + "/check-certificate", Json.object());
+        return http.post("/identity/custom-domains/" + TouchqueHttp.seg(domainId) + "/check-certificate", Json.object());
     }
 
     /** The delivery log. Message text only in the local dev inbox. */
@@ -156,17 +156,17 @@ public final class Identity {
      * left out keeps its stored value.
      */
     public JsonNode setDelivery(String channel, Object provider) {
-        return http.put("/identity/delivery/" + TouchQueHttp.seg(channel), Json.toNode(provider));
+        return http.put("/identity/delivery/" + TouchqueHttp.seg(channel), Json.toNode(provider));
     }
 
-    /** Back to TouchQue's transport. */
+    /** Back to Touchque's transport. */
     public JsonNode removeDelivery(String channel) {
-        return http.delete("/identity/delivery/" + TouchQueHttp.seg(channel));
+        return http.delete("/identity/delivery/" + TouchqueHttp.seg(channel));
     }
 
     /** One test message through the provider in use. */
     public JsonNode testDelivery(String channel, String to) {
-        return http.post("/identity/delivery/" + TouchQueHttp.seg(channel) + "/test", Json.object().put("to", to));
+        return http.post("/identity/delivery/" + TouchqueHttp.seg(channel) + "/test", Json.object().put("to", to));
     }
 
     /** A query from any object: its fields as strings (booleans lower-case), nulls left out. */
@@ -185,13 +185,13 @@ public final class Identity {
         return out;
     }
 
-    /** List, get, create, update and delete for one kind of TouchQue Login object. */
+    /** List, get, create, update and delete for one kind of Touchque Login object. */
     public static class Crud {
-        protected final TouchQueHttp http;
+        protected final TouchqueHttp http;
         protected final String base;
         private final String listKey;
 
-        Crud(TouchQueHttp http, String base, String listKey) {
+        Crud(TouchqueHttp http, String base, String listKey) {
             this.http = http;
             this.base = base;
             this.listKey = listKey;
@@ -207,7 +207,7 @@ public final class Identity {
         }
 
         public JsonNode get(String id) {
-            return http.get(base + "/" + TouchQueHttp.seg(id));
+            return http.get(base + "/" + TouchqueHttp.seg(id));
         }
 
         public JsonNode create(Object body) {
@@ -215,17 +215,17 @@ public final class Identity {
         }
 
         public JsonNode update(String id, Object body) {
-            return http.patch(base + "/" + TouchQueHttp.seg(id), Json.toNode(body));
+            return http.patch(base + "/" + TouchqueHttp.seg(id), Json.toNode(body));
         }
 
         public JsonNode delete(String id) {
-            return http.delete(base + "/" + TouchQueHttp.seg(id));
+            return http.delete(base + "/" + TouchqueHttp.seg(id));
         }
     }
 
     /** Business customers, their members and invitations. */
     public static final class Organizations extends Crud {
-        Organizations(TouchQueHttp http) {
+        Organizations(TouchqueHttp http) {
             super(http, "/identity/organizations", "organizations");
         }
 
@@ -240,7 +240,7 @@ public final class Identity {
         }
 
         public JsonNode removeMember(String orgId, String userId) {
-            return http.delete(org(orgId) + "/members/" + TouchQueHttp.seg(userId));
+            return http.delete(org(orgId) + "/members/" + TouchqueHttp.seg(userId));
         }
 
         public JsonNode setConnections(String orgId, Object connections) {
@@ -259,32 +259,32 @@ public final class Identity {
         }
 
         public JsonNode revokeInvitation(String orgId, String invitationId) {
-            return http.delete(org(orgId) + "/invitations/" + TouchQueHttp.seg(invitationId));
+            return http.delete(org(orgId) + "/invitations/" + TouchqueHttp.seg(invitationId));
         }
 
         private String org(String orgId) {
-            return base + "/" + TouchQueHttp.seg(orgId);
+            return base + "/" + TouchqueHttp.seg(orgId);
         }
     }
 
     /** Your customers' apps (OpenID Connect clients). */
     public static final class Clients extends Crud {
-        Clients(TouchQueHttp http) {
+        Clients(TouchqueHttp http) {
             super(http, "/identity/clients", "clients");
         }
 
         /** A new client secret: it is in the answer ({@code clientSecret}), this once; the old one stops working. */
         public JsonNode rotateSecret(String clientId) {
-            return http.post(base + "/" + TouchQueHttp.seg(clientId) + "/rotate-secret", Json.object());
+            return http.post(base + "/" + TouchqueHttp.seg(clientId) + "/rotate-secret", Json.object());
         }
     }
 
     /** Bulk user imports and exports, running in the background. */
     public static final class Jobs {
-        private final TouchQueHttp http;
+        private final TouchqueHttp http;
         private final String kind;
 
-        Jobs(TouchQueHttp http, String kind) {
+        Jobs(TouchqueHttp http, String kind) {
             this.http = http;
             this.kind = kind;
         }
@@ -295,12 +295,12 @@ public final class Identity {
         }
 
         public JsonNode get(String jobId) {
-            return http.get("/identity/users-" + kind + "/" + TouchQueHttp.seg(jobId));
+            return http.get("/identity/users-" + kind + "/" + TouchqueHttp.seg(jobId));
         }
 
         /** Exports: the finished file (CSV or JSON lines), as text. */
         public String file(String jobId) {
-            return http.getText("/identity/users-" + kind + "/" + TouchQueHttp.seg(jobId) + "/file");
+            return http.getText("/identity/users-" + kind + "/" + TouchqueHttp.seg(jobId) + "/file");
         }
 
         /** Polls until the job is done or failed (or the timeout passes: the last state). Nulls: every second, ten minutes. */
@@ -316,14 +316,14 @@ public final class Identity {
 
     /** A tenant's customer accounts. */
     public static final class Users {
-        private final TouchQueHttp http;
+        private final TouchqueHttp http;
 
-        Users(TouchQueHttp http) {
+        Users(TouchqueHttp http) {
             this.http = http;
         }
 
         private static String u(String userId) {
-            return "/identity/users/" + TouchQueHttp.seg(userId);
+            return "/identity/users/" + TouchqueHttp.seg(userId);
         }
 
         /** Query fields: q, blocked, emailVerified, connection, organization, limit, cursor. */
@@ -372,14 +372,14 @@ public final class Identity {
 
         /** Signs the person out of one session (the others stay). */
         public JsonNode endSession(String userId, String sessionId) {
-            return http.delete(u(userId) + "/sessions/" + TouchQueHttp.seg(sessionId));
+            return http.delete(u(userId) + "/sessions/" + TouchqueHttp.seg(sessionId));
         }
 
         public JsonNode signOutEverywhere(String userId) {
             return http.delete(u(userId) + "/sessions");
         }
 
-        /** Removes passkeys, unlinks the TouchQue app, turns email codes off, signs out everywhere. */
+        /** Removes passkeys, unlinks the Touchque app, turns email codes off, signs out everywhere. */
         public JsonNode resetMfa(String userId) {
             return http.delete(u(userId) + "/mfa");
         }
@@ -391,11 +391,11 @@ public final class Identity {
 
         /** Deletes the stored tokens: apps stop using the account for the user; signing in with it stays. */
         public JsonNode disconnectAccount(String userId, String accountId) {
-            return http.delete(u(userId) + "/connected-accounts/" + TouchQueHttp.seg(accountId));
+            return http.delete(u(userId) + "/connected-accounts/" + TouchqueHttp.seg(accountId));
         }
 
         public JsonNode unlinkIdentity(String userId, String identityId, boolean force) {
-            return http.delete(u(userId) + "/identities/" + TouchQueHttp.seg(identityId) + (force ? "?force=true" : ""));
+            return http.delete(u(userId) + "/identities/" + TouchqueHttp.seg(identityId) + (force ? "?force=true" : ""));
         }
 
         public JsonNode sendVerificationEmail(String userId, String returnTo) {
@@ -421,7 +421,7 @@ public final class Identity {
         }
 
         public JsonNode removeRole(String userId, String roleId, String organizationId) {
-            return http.delete(u(userId) + "/roles/" + TouchQueHttp.seg(roleId) + (organizationId == null ? "" : "?organizationId=" + TouchQueHttp.seg(organizationId)));
+            return http.delete(u(userId) + "/roles/" + TouchqueHttp.seg(roleId) + (organizationId == null ? "" : "?organizationId=" + TouchqueHttp.seg(organizationId)));
         }
 
         public JsonNode logs(String userId, Integer limit) {
