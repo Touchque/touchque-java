@@ -32,7 +32,9 @@ implementation("com.touchque:touchque-java:5.0.0")                  // anything 
 ```
 
 > **Not on Maven Central yet.** Until it is, run `mvn -DskipTests install` in a clone of
-> [this repository](https://github.com/Touchque/touchque-java); the dependency then resolves from your local repository.
+> [this repository](https://github.com/Touchque/touchque-java). Maven then finds the artifacts in your local repository
+> (`~/.m2/repository`); Gradle reads it only when the build names it, so add `mavenLocal()` to `repositories { }`
+> (before `mavenCentral()`) until then.
 
 ## Setup
 
@@ -93,7 +95,8 @@ tq.actionTypes().define("SEND_MONEY", "Send money", true);   // type, name, crit
 The guard refuses what is not ready. A name that is not defined is a setup error
 (`TouchqueConfigException`, "Unknown action …"): the guard answers 500 with `reason: "misconfigured"`. A type
 turned off in the dashboard answers 403 with `reason: "action_disabled"`, which stops that kind of
-approval at once, without a deploy.
+approval at once, without a deploy. These answers come for a
+user whose phone is linked: a user without one is first shown the phone-linking step.
 
 ## The three primitives (any framework)
 
