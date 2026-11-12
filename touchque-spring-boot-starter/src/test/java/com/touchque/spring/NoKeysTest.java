@@ -28,7 +28,11 @@ class NoKeysTest {
     int port;
 
     private HttpResponse<String> pay(Map<String, String> headers) throws Exception {
-        HttpRequest.Builder req = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/pay")).POST(HttpRequest.BodyPublishers.noBody());
+        return post("/pay", headers);
+    }
+
+    private HttpResponse<String> post(String path, Map<String, String> headers) throws Exception {
+        HttpRequest.Builder req = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path)).POST(HttpRequest.BodyPublishers.noBody());
         headers.forEach(req::header);
         return http.send(req.build(), HttpResponse.BodyHandlers.ofString());
     }
@@ -69,6 +73,10 @@ class NoKeysTest {
                         + "\"error\":{\"code\":\"misconfigured\",\"message\":\"Two-factor approval is not configured correctly.\"}}"), Json.parse(res.body()));
             }
             assertEquals(0, NoKeysApp.RUNS.get());
+            // The README's guard inside a handler (the client bean per request, else Guard.withoutClient) answers the same.
+            for (Map<String, String> headers : List.<Map<String, String>>of(Map.of(), Map.of("X-Test-User", "jane@acme.com"))) {
+                assertEquals(StarterTest.answer(pay(headers)), StarterTest.answer(post("/handler/SEND_MONEY", headers)));
+            }
             // Once per process, through the SDK's logger (touchque.debug).
             assertEquals(List.of(NOT_SET), lines);
         } finally {

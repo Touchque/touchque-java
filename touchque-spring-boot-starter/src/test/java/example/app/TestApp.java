@@ -10,6 +10,7 @@ import com.touchque.spring.TouchqueWebhookListener;
 import com.touchque.agents.McpAuth;
 import com.touchque.flow.Approval;
 import com.touchque.relay.RelayOptions;
+import example.handler.GuardHandler;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
@@ -26,8 +28,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-/** A small app using every piece of the starter. */
+/** A small app using every piece of the starter, and the README's guard inside a handler ({@link GuardHandler}). */
 @SpringBootApplication
+@Import(GuardHandler.class)
 public class TestApp {
     public static final List<ObjectNode> EVENTS = new CopyOnWriteArrayList<>();
     /** The webhook listener throws once (the database is down) when set. */
@@ -59,6 +62,16 @@ public class TestApp {
         }
     }
 
+    /** An action the API does not know: the guard answers 500 misconfigured. */
+    @RestController
+    static class Undefined {
+        @PostMapping("/undefined")
+        @RequireTouchque("NOT_DEFINED")
+        public Map<String, Object> undefined() {
+            return Map.of("ok", true);
+        }
+    }
+
     @RestController
     static class Mcp {
         private final McpAuth auth;
@@ -86,6 +99,11 @@ public class TestApp {
     @Bean
     TouchqueGuardOptions login() {
         return TouchqueGuardOptions.forAction("LOGIN").user(c -> c.request().getHeader("X-Test-User"));
+    }
+
+    @Bean
+    TouchqueGuardOptions notDefined() {
+        return TouchqueGuardOptions.forAction("NOT_DEFINED").user(c -> c.request().getHeader("X-Test-User"));
     }
 
     /** The app's own error shape for every guarded method without one of its own. */

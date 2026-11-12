@@ -18,6 +18,11 @@ public final class SdkLog {
         this.logger = logger != null ? logger : debug ? System.getLogger("touchque") : null;
     }
 
+    /** Where the lines go: the integrator's logger, {@code "touchque"} with debug, or null (nowhere). */
+    public System.Logger logger() {
+        return logger;
+    }
+
     public void warn(String message) {
         write(System.Logger.Level.WARNING, message);
     }

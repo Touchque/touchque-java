@@ -6,7 +6,7 @@
 
   <groupId>com.touchque</groupId>
   <artifactId>touchque-java-parent</artifactId>
-  <version>5.1.0</version>
+  <version>5.2.0</version>
   <packaging>pom</packaging>
 
   <name>Touchque Java SDK (parent)</name>

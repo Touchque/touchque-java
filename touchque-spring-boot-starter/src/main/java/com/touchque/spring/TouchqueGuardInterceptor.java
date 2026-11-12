@@ -1,10 +1,6 @@
 package com.touchque.spring;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.NullNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.LoginDetail;
 import com.touchque.TouchqueClient;
 import com.touchque.TouchqueConfigException;
@@ -93,7 +89,7 @@ final class TouchqueGuardInterceptor implements MethodInterceptor {
                 .context(o.context() != null ? o.context().apply(context) : null);
         TouchqueClient tq = client();
         Guard.Result result = tq == null ? Guard.withoutClient(input) : Guard.run(tq, input);
-        if (result.approved() == null) throw new TouchqueStepException(result, body(result, o, tq));
+        if (result.approved() == null) throw new TouchqueStepException(result, response(result, o, tq));
         request.setAttribute(TouchqueSpring.APPROVAL_ATTRIBUTE, result.approved());
         Object[] args = invocation.getArguments();
         Class<?>[] types = invocation.getMethod().getParameterTypes();
@@ -139,30 +135,15 @@ final class TouchqueGuardInterceptor implements MethodInterceptor {
     }
 
     /**
-     * The body to send: the guard's, or for a refusal (400 or more) the errorBody's when one is set.
-     * A 202 step never looks the bean up, so two of them (none {@code @Primary}) cannot break it;
-     * refusals then keep the default body.
+     * What to send, from {@link Guard#response}: the guard's body, or for a refusal (400 or more) the
+     * errorBody's when one is set, written with the app's ObjectMapper. A 202 step never looks the
+     * bean up, so two of them (none {@code @Primary}) cannot break it; refusals then keep the
+     * default body.
      */
-    private JsonNode body(Guard.Result result, TouchqueGuardOptions o, TouchqueClient tq) {
-        Guard.Refusal refusal = Guard.Refusal.of(result);
-        if (refusal == null) return result.body();
-        TouchqueErrorBody errorBody = o.errorBody() != null ? o.errorBody() : unique(TouchqueErrorBody.class);
-        if (errorBody == null) return result.body();
-        try {
-            // Decided by the real encoding: written with the app's ObjectMapper and read back with the SDK's, so the
-            // answer sent meets the same write and read limits (nesting depth, sizes). What cannot be written falls back below.
-            Object value = errorBody.body(refusal);
-            JsonNode node = value == null ? NullNode.instance : Json.MAPPER.readTree(unique(ObjectMapper.class, Json.MAPPER).writeValueAsBytes(value));
-            // The SDK's key wins, so @touchque/web still sees the state.
-            if (node instanceof ObjectNode object) object.set("touchque", result.body().get("touchque").deepCopy());
-            return node != null ? node : NullNode.instance;
-        } catch (Exception | StackOverflowError e) {
-            // Checked exceptions too (a Kotlin lambda, @SneakyThrows), and a cycle in what it returned: the default body.
-            // Jackson's own message, without the reference chain (it names the app's fields and can run to kilobytes).
-            String message = e instanceof JsonProcessingException j ? j.getOriginalMessage() : e.getMessage();
-            log(tq).error("[Touchque] errorBody failed: " + (message != null ? message : e.getClass().getSimpleName()));
-            return result.body();
-        }
+    private Guard.Response response(Guard.Result result, TouchqueGuardOptions o, TouchqueClient tq) {
+        TouchqueErrorBody errorBody = result.status() < 400 ? null : o.errorBody() != null ? o.errorBody() : unique(TouchqueErrorBody.class);
+        if (errorBody == null) return Guard.response(result, null);
+        return Guard.response(result, errorBody, unique(ObjectMapper.class, Json.MAPPER), log(tq).logger());
     }
 
     /** The SDK's logger: the client's, or without one, the logger {@code touchque} when touchque.debug is on. */

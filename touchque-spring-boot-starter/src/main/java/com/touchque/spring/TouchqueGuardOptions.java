@@ -72,7 +72,10 @@ public final class TouchqueGuardOptions {
         return this;
     }
 
-    /** False: never show the first-time linking QR. */
+    /**
+     * False: never show the first-time linking QR. A user with no phone then gets 202
+     * {@code {"state": "enroll", "reason": "enrollment_off"}}.
+     */
     public TouchqueGuardOptions enroll(boolean v) {
         this.enroll = v;
         return this;

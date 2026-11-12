@@ -53,7 +53,10 @@ public final class StartOptions {
         return this;
     }
 
-    /** False: never show the first-time linking QR (a typed username proves nothing). */
+    /**
+     * False: never show the first-time linking QR (a typed username proves nothing). A user with no
+     * phone then gets {@code enroll} with reason {@code enrollment_off}.
+     */
     public StartOptions enroll(boolean v) {
         this.enroll = v;
         return this;

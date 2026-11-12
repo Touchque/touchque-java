@@ -382,6 +382,86 @@ class ContractTest {
     }
 
     @Test
+    void waitingPollsRepeatTheRequestsExpiry() {
+        api.link("rx@acme.com");
+        TouchqueClient tq = api.client();
+        Guard.Result first = Guard.run(tq, g("rx@acme.com", null));
+        String expiresAt = step(first).get("expiresAt").asText();
+        long rx = Instant.parse(expiresAt).toEpochMilli();
+        assertEquals(rx, Steps.verifyGuardToken("test_secret", token(first)).get("rx").asLong());
+        // Every later poll in waiting carries the same expiresAt, so a page can stop by time on the latest answer.
+        Guard.Result poll = Guard.run(tq, g("rx@acme.com", token(first)));
+        Guard.Result again = Guard.run(tq, g("rx@acme.com", token(poll)));
+        assertEquals(List.of("waiting", expiresAt, "waiting", expiresAt),
+                List.of(step(poll).get("state").asText(), step(poll).get("expiresAt").asText(), step(again).get("state").asText(), step(again).get("expiresAt").asText()));
+        assertEquals(rx, Steps.verifyGuardToken("test_secret", token(again)).get("rx").asLong());
+        // Through the offline QR, its token keeps rx.
+        Guard.Result offline = Guard.run(tq, g("rx@acme.com", token(again)).offline(true));
+        assertEquals(List.of("offline", rx), List.of(step(offline).get("state").asText(), Steps.verifyGuardToken("test_secret", token(offline)).get("rx").asLong()));
+        // Vishing Shield: the escalation to a passkey extends the request to 180 s. The polls take the live expiry and keep it.
+        api.escalate(null);
+        Guard.Result passkey = Guard.run(tq, g("rx@acme.com", token(offline)));
+        String extended = step(passkey).get("expiresAt").asText();
+        long live = Instant.parse(extended).toEpochMilli();
+        assertTrue(live > rx + 100_000 && Math.abs(live - (System.currentTimeMillis() + 180_000)) < 30_000, extended);
+        assertEquals(List.of("passkey_required", live), List.of(step(passkey).get("state").asText(), Steps.verifyGuardToken("test_secret", token(passkey)).get("rx").asLong()));
+        Guard.Result passkeyAgain = Guard.run(tq, g("rx@acme.com", token(passkey)));
+        assertEquals(List.of("passkey_required", extended), List.of(step(passkeyAgain).get("state").asText(), step(passkeyAgain).get("expiresAt").asText()));
+        // A 5.1 token (no rx) gets the live expiry too.
+        ObjectNode old = Steps.verifyGuardToken("test_secret", token(first));
+        old.remove("rx");
+        Guard.Result legacy = Guard.run(tq, g("rx@acme.com", Steps.signGuardToken("test_secret", old)));
+        assertEquals(List.of("passkey_required", extended), List.of(step(legacy).get("state").asText(), step(legacy).get("expiresAt").asText()));
+    }
+
+    @Test
+    void aPollTakesTheStatusAnswersExpiryElseTheTokens() throws Exception {
+        AtomicReference<Object> status = new AtomicReference<>();
+        try (Support.Stub stub = new Support.Stub(seen -> Support.Answer.json(200, status.get()))) {
+            TouchqueClient tq = new TouchqueClient(new TouchqueOptions().apiKey("tq_k").apiSecret("s").baseUrl(stub.baseUrl));
+            long now = System.currentTimeMillis();
+            ObjectNode waiting = Json.object().put("u", "s@acme.com").put("a", "LOGIN").put("d", "").putNull("r").put("st", "waiting").put("rid", "r1")
+                    .put("exp", now + 60_000);
+            String withRx = Steps.signGuardToken("s", waiting.deepCopy().put("rx", now + 20_000));
+            String withoutRx = Steps.signGuardToken("s", waiting);
+            java.time.format.DateTimeFormatter millis = new java.time.format.DateTimeFormatterBuilder().appendInstant(3).toFormatter(Locale.ROOT);
+            String kept = millis.format(Instant.ofEpochMilli(now + 20_000));
+            String later = millis.format(Instant.ofEpochMilli(now + 90_000));
+            List<List<Object>> seen = new java.util.ArrayList<>();
+            for (Object answer : List.of(Map.of("status", "PENDING"), Map.of("status", "PENDING", "expiresAt", "soon"), Map.of("status", "PENDING", "expiresAt", later))) {
+                status.set(answer);
+                for (String token : List.of(withRx, withoutRx)) {
+                    Guard.Result r = Guard.run(tq, g("s@acme.com", token));
+                    JsonNode rx = Steps.verifyGuardToken("s", token(r)).get("rx");
+                    seen.add(java.util.Arrays.asList(step(r).get("state").asText(), step(r).has("expiresAt") ? step(r).get("expiresAt").asText() : null,
+                            rx == null ? null : rx.asLong()));
+                }
+            }
+            // No expiry in the status answer, or one that does not parse: the token's (none without rx). One that parses wins and is kept.
+            assertEquals(List.of(
+                    java.util.Arrays.asList("waiting", kept, now + 20_000), java.util.Arrays.asList("waiting", null, null),
+                    java.util.Arrays.asList("waiting", kept, now + 20_000), java.util.Arrays.asList("waiting", null, null),
+                    java.util.Arrays.asList("waiting", later, now + 90_000), java.util.Arrays.asList("waiting", later, now + 90_000)), seen);
+        }
+    }
+
+    @Test
+    void enrollFalseAnswersEnrollmentOff() {
+        TouchqueClient tq = api.client();
+        Guard.Result guarded = Guard.run(tq, g("nophone@acme.com", null).enroll(false));
+        assertEquals(202, guarded.status());
+        assertEquals(Json.parse("{\"state\":\"enroll\",\"reason\":\"enrollment_off\"}"), step(guarded));
+        assertEquals(List.of("enroll", "enrollment_off"), List.of(tq.start("LOGIN", new StartOptions("nophone@acme.com").enroll(false)).state(),
+                tq.start("LOGIN", new StartOptions("nophone@acme.com").enroll(false)).reason()));
+        // The relay's /login without getLoginUser (a typed username proves nothing) answers the same.
+        RelayHandler<String> relay = new RelayHandler<>(tq, new RelayOptions<String>(x -> x));
+        RelayResponse typed = relay.handle(new RelayRequest<>("POST", "/login", Json.object().put("externalUsername", "nophone@acme.com"), "203.0.113.9", "UA", h -> null, "x"));
+        assertEquals(List.of(202, Json.parse("{\"state\":\"enroll\",\"reason\":\"enrollment_off\"}")), List.of(typed.status(), typed.body().get("touchque")));
+        // No first-time QR was made for anyone.
+        for (JsonNode call : api.calls()) assertEquals("/login/request", call.get("path").asText());
+    }
+
+    @Test
     void qrPairingCreateScanThenAskThePhoneThatScanned() throws Exception {
         api.link("ayse@acme.com");
         TouchqueClient tq = api.client();

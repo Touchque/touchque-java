@@ -171,10 +171,19 @@ public final class Login {
     /**
      * Where a request is: {@code status} PENDING, CONFIRMED, REJECTED or EXPIRED. {@code provisional}:
      * Vishing Shield, approved during a call and waiting for the phone to re-confirm.
+     * {@code expiresAt}: when the request expires (ISO 8601; a Vishing Shield escalation to a passkey
+     * extends it), null when the API did not say.
      */
     public record Status(String status, String externalUsername, String type, String referenceId, List<LoginDetail> details, boolean consumed,
                          boolean requiresPasskey, String confirmedVia, Assurance assurance, String rejectReason, boolean provisional,
-                         String reconfirmedAt, boolean revoked, String revokeReason, JsonNode reply) {
+                         String reconfirmedAt, boolean revoked, String revokeReason, JsonNode reply, String expiresAt) {
+        /** The answer without {@code expiresAt} (null), as before it was added. */
+        public Status(String status, String externalUsername, String type, String referenceId, List<LoginDetail> details, boolean consumed,
+                      boolean requiresPasskey, String confirmedVia, Assurance assurance, String rejectReason, boolean provisional,
+                      String reconfirmedAt, boolean revoked, String revokeReason, JsonNode reply) {
+            this(status, externalUsername, type, referenceId, details, consumed, requiresPasskey, confirmedVia, assurance, rejectReason, provisional,
+                    reconfirmedAt, revoked, revokeReason, reply, null);
+        }
     }
 
     /** An approved request: {@code provisional} means approved during a call (critical actions wait for the phone to re-confirm). */

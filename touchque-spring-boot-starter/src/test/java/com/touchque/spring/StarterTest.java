@@ -14,6 +14,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -161,6 +163,51 @@ class StarterTest {
             assertEquals(List.of("frozen", true, false), List.of(body.get("touchque").get("state").asText(), body.has("token"), body.has("n")));
         }
         assertEquals(2, TestApp.ERROR_BODIES.get());
+    }
+
+    /** What two answers must share: two guard runs differ only in the token and the request's id and expiry. */
+    static List<Object> answer(HttpResponse<String> res) {
+        JsonNode body = Json.parse(res.body());
+        boolean token = body instanceof ObjectNode o && o.has("token");
+        if (body instanceof ObjectNode o) {
+            o.remove("token");
+            if (o.get("touchque") instanceof ObjectNode step) {
+                step.remove("requestId");
+                step.remove("expiresAt");
+            }
+        }
+        return Arrays.asList(res.statusCode(), res.headers().firstValue("Content-Type").orElse("").startsWith("application/json"),
+                res.headers().firstValue("Cache-Control").orElse(null), res.headers().firstValue("Retry-After").orElse(null),
+                res.headers().firstValue("X-Touchque-State").orElse(null), res.headers().firstValue("X-Touchque-Reason").orElse(null), token, body);
+    }
+
+    @Test
+    void aGuardInsideAHandlerAnswersExactlyLikeTheAdapters() throws Exception {
+        API.post("/__test/link", Map.of("user", "handler@acme.com"));
+        Map<String, String> jane = Map.of("X-Test-User", "jane@acme.com");
+        Map<String, String> other = Map.of("X-Test-User", "handler@acme.com");
+        List<Integer> statuses = new ArrayList<>();
+        for (Map<String, Object> scenario : List.<Map<String, Object>>of(Map.of(), Map.of("blocked", "geo_policy"), Map.of("rateLimited", true), Map.of("frozen", true))) {
+            Map<String, Object> opts = new HashMap<>(Map.of("blocked", false, "rateLimited", false, "frozen", false));
+            opts.putAll(scenario);
+            API.post("/__test/opts", opts);
+            // With an errorBody: @RequireTouchque with the app's TouchqueErrorBody bean, and the handler passing that bean to Guard.response.
+            List<Object> adapter = answer(send("POST", "/account", Map.of(), jane));
+            assertEquals(adapter, answer(send("POST", "/handler/LOGIN?errorBody=true", Map.of(), jane)));
+            // Without one: the relay's POST /login, and the handler with Guard.response(r, null).
+            List<Object> relay = answer(send("POST", "/touchque/login", Map.of(), other));
+            assertEquals(relay, answer(send("POST", "/handler/LOGIN", Map.of(), other)));
+            statuses.add((Integer) adapter.get(0));
+            statuses.add((Integer) relay.get(0));
+        }
+        // 500 misconfigured: an action the API does not know.
+        API.post("/__test/opts", Map.of("blocked", false, "rateLimited", false, "frozen", false));
+        List<Object> misconfigured = answer(send("POST", "/undefined", Map.of(), jane));
+        assertEquals(misconfigured, answer(send("POST", "/handler/NOT_DEFINED?errorBody=true", Map.of(), jane)));
+        statuses.add((Integer) misconfigured.get(0));
+        assertEquals(List.of(202, 202, 403, 403, 429, 429, 423, 423, 500), statuses);
+        assertEquals(Json.parse("{\"message\":\"Two-factor approval is not configured correctly.\",\"code\":\"misconfigured\","
+                + "\"touchque\":{\"state\":\"blocked\",\"reason\":\"misconfigured\"}}"), misconfigured.get(7));
     }
 
     @Test

@@ -26,7 +26,7 @@ import java.util.TreeMap;
  * Internal API.
  */
 public final class TouchqueHttp {
-    public static final String SDK_VERSION = "5.1.0";
+    public static final String SDK_VERSION = "5.2.0";
     static final int MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
     private final String apiKey;

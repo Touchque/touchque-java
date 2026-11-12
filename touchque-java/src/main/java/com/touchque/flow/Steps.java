@@ -66,7 +66,8 @@ public final class Steps {
             String caseCode = e.caseCode();
             String message = String.valueOf(e.getMessage()).toLowerCase(Locale.ROOT);
             if (e.status() == 404 && ("device_not_linked".equals(code) || message.contains("linked device"))) {
-                return o.enroll ? enrollStep(client, o.user) : Step.of("enroll");
+                // No QR may be shown here: say why, so a page stops instead of polling a step it cannot finish.
+                return o.enroll ? enrollStep(client, o.user) : Step.of("enroll").withReason("enrollment_off");
             }
             if (e.status() == 423) return Step.of("frozen").withRetryAfter(e.retryAfter()).withCaseCode(caseCode);
             if (e.status() == 429) return Step.of("rate_limited").withRetryAfter(e.retryAfter()).withCaseCode(caseCode);
@@ -139,7 +140,8 @@ public final class Steps {
     public static Step check(TouchqueClient client, String requestId) {
         Login.Status s = client.login().status(requestId);
         String state = "PENDING".equals(s.status()) && s.requiresPasskey() ? "passkey_required" : STATE_MAP.getOrDefault(String.valueOf(s.status()), "waiting");
-        Step step = Step.of(state).withRequestId(requestId);
+        // The request's live expiry: a Vishing Shield escalation to a passkey extends it.
+        Step step = Step.of(state).withRequestId(requestId).withExpiresAt(emptyToNull(s.expiresAt()));
         return "approved".equals(state) ? step.withAssurance(s.assurance()) : step;
     }
 

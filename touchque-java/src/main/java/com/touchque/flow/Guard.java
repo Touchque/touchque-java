@@ -1,6 +1,9 @@
 package com.touchque.flow;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.Assurance;
 import com.touchque.LoginDetail;
@@ -15,6 +18,7 @@ import com.touchque.internal.Json;
 import com.touchque.internal.SdkLog;
 import com.touchque.resources.Offline;
 import com.touchque.resources.Risk;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,11 +32,13 @@ import java.util.function.Supplier;
  * over it). Contract, the same in every Touchque server SDK:
  * <ul>
  * <li>1st request: 202 {@code {"touchque": step, "token": ...}}; show the step in your UI;</li>
- * <li>repeat with the token (header {@code X-Touchque-Token}): 202 while waiting, then the protected action runs once;</li>
+ * <li>repeat with the token (header {@code X-Touchque-Token}): 202 while waiting, then the protected action runs once;
+ * a waiting poll repeats the request's {@code expiresAt};</li>
  * <li>while the first-time linking QR is up: 202 {@code {"touchque": {"state": "enroll", "expiresAt": ...}}} without
- * {@code enroll}, keep showing that QR; a new one comes with {@code enroll.qrCodeDataUrl} once it expired;</li>
+ * {@code enroll}, keep showing that QR; a new one comes with {@code enroll.qrCodeDataUrl} about 15 s before it expires;</li>
  * <li>refused: 403 / 408 / 423 / 429 {@code {"touchque": {"state": ...}}}.</li>
  * </ul>
+ * {@link #response} turns a result that is not an approval into its HTTP answer.
  */
 public final class Guard {
     public static final String TOKEN_HEADER = "X-Touchque-Token";
@@ -56,6 +62,14 @@ public final class Guard {
             "approved", 200, "rejected", 403, "blocked", 403, "expired", 408, "frozen", 423, "rate_limited", 429);
 
     private static final Set<String> WAITING = Set.of("waiting", "passkey_required", "offline");
+    /** A push or a passkey on its way: the steps whose polls repeat the request's expiry. */
+    private static final Set<String> ON_THE_PHONE = Set.of("waiting", "passkey_required");
+
+    /** The client of {@code run(null, …)}: built on first use, then kept (or set with {@link #setDefaultClient}). */
+    private static volatile TouchqueClient sharedClient;
+    private static final Object SHARED_CLIENT_LOCK = new Object();
+    /** How {@link #defaultClient()} builds it: from the environment. Package-private so a test can make a build fail. */
+    static volatile Supplier<TouchqueClient> clientBuilder = TouchqueClient::new;
 
     private Guard() {
     }
@@ -135,7 +149,10 @@ public final class Guard {
             return this;
         }
 
-        /** False: never show the first-time linking QR. */
+        /**
+         * False: never show the first-time linking QR. A user with no phone then gets 202
+         * {@code {"state": "enroll", "reason": "enrollment_off"}}.
+         */
         public Input enroll(boolean v) {
             this.enroll = v;
             return this;
@@ -216,7 +233,7 @@ public final class Guard {
         /** The refusal in a guard's answer, or null for a 202 step or an approval. */
         public static Refusal of(Result result) {
             if (result == null || result.approved() != null || result.status() < 400 || result.body() == null) return null;
-            JsonNode step = result.body().get("touchque");
+            JsonNode step = stepOf(result);
             JsonNode error = result.body().get("error");
             String state = Json.str(step, "state");
             String code = Json.str(error, "code");
@@ -236,16 +253,104 @@ public final class Guard {
         }
     }
 
+    /** The step a result answers: its body's {@code touchque}, else its {@link Result#step()} (a hook's result may carry only that). */
+    private static JsonNode stepOf(Result result) {
+        JsonNode step = result.body() == null ? null : result.body().get("touchque");
+        return step != null || result.step() == null ? step : Steps.toJson(result.step());
+    }
+
+    /**
+     * Your app's own JSON body for refused answers (status 400 or more: 401, 403, 408, 423, 429,
+     * 500, 503). Never called for a 202 step or on approval. What it returns counts by its JSON
+     * encoding: a JSON object is sent with {@code touchque} set to the step (so
+     * {@code @touchque/web} still sees the state; no token is added), anything else (a string, a
+     * number, a list, null) as it is. It gets a copy of the step. See {@link #response}.
+     */
+    @FunctionalInterface
+    public interface ErrorBody {
+        Object body(Refusal refusal);
+    }
+
+    /**
+     * The HTTP answer of a guard result that is not an approval, as {@link #response} builds it:
+     * the status, the headers ({@code Cache-Control: no-store}, {@code Retry-After} on 423 and 429,
+     * {@code X-Touchque-State} and {@code X-Touchque-Reason} on a refusal) and the JSON body (an
+     * object, or what an {@link ErrorBody} returned: a string, a number, a list, null). Send the
+     * body as JSON.
+     */
+    public record Response(int status, Map<String, String> headers, JsonNode body) {
+    }
+
+    /**
+     * What to send for a result that is not an approval: the status and headers
+     * {@code @RequireTouchque} and the relay send (they use this too), and the guard's body.
+     * {@code errorBody} (null: the guard's body) shapes the refusals, status 400 or more; it is
+     * never called for a 202 step. This form writes its result with the SDK's own ObjectMapper and
+     * logs nothing when it fails (the guard's body is sent then). For the answer
+     * {@code @RequireTouchque} sends with an errorBody, written with your app's ObjectMapper and
+     * logged, use {@link #response(Result, ErrorBody, ObjectMapper, System.Logger)}. Without an
+     * errorBody the two forms are the same.
+     *
+     * @throws IllegalArgumentException for an approval: run your action instead
+     */
+    public static Response response(Result result, ErrorBody errorBody) {
+        return response(result, errorBody, null, null);
+    }
+
+    /**
+     * The answer {@code @RequireTouchque} sends: {@link #response(Result, ErrorBody)} with your
+     * app's {@code mapper} writing what {@code errorBody} returns (null: the SDK's; it is read back
+     * with the SDK's limits, so more than 1,000 levels of nesting fall back too), and a
+     * {@code logger} for {@code [Touchque] errorBody failed: <message>} (null: nothing is logged).
+     *
+     * @throws IllegalArgumentException for an approval: run your action instead
+     */
+    public static Response response(Result result, ErrorBody errorBody, ObjectMapper mapper, System.Logger logger) {
+        if (result == null || result.approved() != null) {
+            throw new IllegalArgumentException("Guard.response answers a step or a refusal; on approval, run your action");
+        }
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Cache-Control", "no-store");
+        if (result.retryAfter() != null) headers.put("Retry-After", String.valueOf(result.retryAfter()));
+        headers.putAll(result.refusalHeaders());
+        return new Response(result.status(), Collections.unmodifiableMap(headers), body(result, errorBody, mapper, new SdkLog(logger, false)));
+    }
+
+    /** The guard's body, or for a refusal (400 or more) what {@code errorBody} makes of it. */
+    private static JsonNode body(Result result, ErrorBody errorBody, ObjectMapper mapper, SdkLog log) {
+        Refusal refusal = errorBody == null ? null : Refusal.of(result);
+        if (refusal == null) return result.body();
+        try {
+            // Decided by the real encoding: written with the app's ObjectMapper and read back with the SDK's, so the
+            // answer sent meets the same write and read limits (nesting depth, sizes). What cannot be written falls back below.
+            Object value = errorBody.body(refusal);
+            JsonNode node = value == null ? NullNode.instance : Json.MAPPER.readTree((mapper != null ? mapper : Json.MAPPER).writeValueAsBytes(value));
+            JsonNode step = stepOf(result);
+            // The SDK's key wins, so @touchque/web still sees the state.
+            if (node instanceof ObjectNode object && step != null) object.set("touchque", step.deepCopy());
+            return node != null ? node : NullNode.instance;
+        } catch (Exception | StackOverflowError e) {
+            // Checked exceptions too (a Kotlin lambda, @SneakyThrows), and a cycle in what it returned: the default body.
+            // Jackson's own message, without the reference chain (it names the app's fields and can run to kilobytes).
+            String message = e instanceof JsonProcessingException j ? j.getOriginalMessage() : e.getMessage();
+            log.error("[Touchque] errorBody failed: " + (message != null ? message : e.getClass().getSimpleName()));
+            return result.body();
+        }
+    }
+
     /**
      * True when this request only reads a state: it polls an approval already on its way (a valid
      * token bound to this user/action/details, still waiting) or a first-time linking QR still up (a
      * bound {@code enroll} token whose QR expires in more than 15 s), with no offline switch or typed
      * code. Relays do not count it against the per-user push limit. A start such a poll leads to (a
      * push once the phone is linked, a new QR) goes through {@link Input#beforeStart}, where relays
-     * charge it like a fresh attempt: every start is counted.
+     * charge it like a fresh attempt: every start is counted. A null {@code client} is
+     * {@link #defaultClient()}; while that cannot be built, false.
      */
     public static boolean isStatusPoll(TouchqueClient client, Input input) {
         if (empty(input.user) || empty(input.token) || input.offline || !empty(input.code)) return false;
+        if (client == null) client = defaultClientOrNull();
+        if (client == null) return false;
         ObjectNode claims = Steps.verifyGuardToken(client.apiSecret(), input.token);
         if (claims == null || !bound(claims, input)) return false;
         String st = Json.str(claims, "st");
@@ -267,6 +372,45 @@ public final class Guard {
         return empty(input.user) ? unauthenticated() : misconfigured();
     }
 
+    /**
+     * The client {@link #run} and {@link #isStatusPoll} use when you pass null: the one
+     * {@link #setDefaultClient} set, else one built from {@code TQ_API_KEY}, {@code TQ_API_SECRET}
+     * and {@code TQ_API_URL} on first use and kept. A build that fails is not kept: the next call
+     * tries again. Thread-safe. It is not the Spring Boot starter's bean: that one also reads
+     * {@code touchque.*}. Call it at startup to fail fast: the guard's null-client path answers 500
+     * {@code misconfigured} and logs nothing, while this throws and names the problem.
+     *
+     * @throws TouchqueConfigException while it cannot be built (no key or secret, say)
+     */
+    public static TouchqueClient defaultClient() {
+        TouchqueClient c = sharedClient;
+        if (c != null) return c;
+        synchronized (SHARED_CLIENT_LOCK) {
+            if (sharedClient == null) sharedClient = clientBuilder.get();
+            return sharedClient;
+        }
+    }
+
+    /**
+     * Replaces the client {@code run(null, …)} and {@code isStatusPoll(null, …)} use, process-wide:
+     * a client built with a logger gives that path its log lines. {@code null} forgets it, so the
+     * next call builds one from the environment again.
+     */
+    public static void setDefaultClient(TouchqueClient client) {
+        synchronized (SHARED_CLIENT_LOCK) {
+            sharedClient = client;
+        }
+    }
+
+    /** {@link #defaultClient()}, or null while it cannot be built. */
+    private static TouchqueClient defaultClientOrNull() {
+        try {
+            return defaultClient();
+        } catch (TouchqueConfigException e) {
+            return null;
+        }
+    }
+
     private static boolean bound(ObjectNode claims, Input input) {
         return java.util.Objects.equals(Json.str(claims, "u"), input.user) && java.util.Objects.equals(Json.str(claims, "a"), input.action)
                 && java.util.Objects.equals(Json.str(claims, "d"), Details.digest(input.details)) && java.util.Objects.equals(Json.str(claims, "r"), input.referenceId);
@@ -280,10 +424,17 @@ public final class Guard {
      * First-time linking: a poll with the token of an {@code enroll} step only reads the link state
      * ({@code auth().getUser}). Not linked yet and the QR good for more than 15 s: 202
      * {@code {"state": "enroll", "expiresAt": ...}} without {@code enroll}, so the page keeps its QR.
-     * Linked: the push starts. Expired or about to: a new QR.
+     * Linked: the push starts. Expired or about to (15 s before): a new QR, with new recovery codes.
+     * Waiting: every poll carries the request's {@code expiresAt}: the status answer's (a Vishing
+     * Shield escalation extends it), else the one the token kept.
+     * A null {@code client} is {@link #defaultClient()}. While that cannot be built: 401
+     * {@code unauthenticated} without a user, else 500 {@code misconfigured}; nothing is logged then,
+     * since the SDK's logger belongs to a client (call {@link #defaultClient()} at startup to fail fast).
      */
     public static Result run(TouchqueClient client, Input input) {
         if (empty(input.user)) return unauthenticated();
+        if (client == null) client = defaultClientOrNull();
+        if (client == null) return misconfigured();
         String user = input.user;
         String action = input.action;
         List<LoginDetail> norm = Details.normalize(input.details);
@@ -296,10 +447,14 @@ public final class Guard {
             String n = bound == null ? null : Json.str(bound, "n");
             String oc = bound == null ? null : Json.str(bound, "oc");
             String st = bound == null ? null : Json.str(bound, "st");
+            // When the push or passkey request expires (rx, ms since the epoch): its polls repeat it.
+            Long rx = bound == null ? null : Json.lng(bound, "rx");
+            String requestExpiresAt = rx == null ? null : Steps.iso(rx);
             ObjectNode keep = Json.object();
             putNullable(keep, "oc", oc);
             putNullable(keep, "rid", rid);
             putNullable(keep, "n", n);
+            if (rx != null) keep.put("rx", rx);
             ObjectNode keepN = Json.object();
             putNullable(keepN, "n", n);
 
@@ -326,7 +481,7 @@ public final class Guard {
                 if ("request_rejected".equals(reason)) return issue(secret, input, details, Step.of("rejected").withRequestId(rid).withReason("request_rejected"), null);
                 // The push now waits for a passkey (Vishing Shield): no code may finish it.
                 if ("passkey_required".equals(reason) && !empty(rid)) {
-                    return issue(secret, input, details, Step.of("passkey_required").withRequestId(rid).withNumber(n), keepN);
+                    return issue(secret, input, details, Step.of("passkey_required").withRequestId(rid).withNumber(n).withExpiresAt(requestExpiresAt), keepN);
                 }
                 return issue(secret, input, details, Step.of("expired".equals(reason) ? "expired" : "blocked").withReason(reason != null ? reason : "offline_failed"), null);
             }
@@ -342,6 +497,7 @@ public final class Guard {
                     ObjectNode extra = Json.object();
                     putNullable(extra, "rid", rid);
                     putNullable(extra, "n", offline.challengeCode() != null ? offline.challengeCode() : n);
+                    if (rx != null) extra.put("rx", rx);
                     return issue(secret, input, details, Step.of("offline").withOffline(offline), extra);
                 } catch (TouchqueApiException e) {
                     String code = e.code() != null ? e.code() : e.error();
@@ -350,7 +506,7 @@ public final class Guard {
                     }
                     // The push it would follow now waits for a passkey (Vishing Shield): no QR, run the passkey.
                     if (!empty(rid) && "passkey_required".equals(code)) {
-                        return issue(secret, input, details, Step.of("passkey_required").withRequestId(rid).withNumber(n), keepN);
+                        return issue(secret, input, details, Step.of("passkey_required").withRequestId(rid).withNumber(n).withExpiresAt(requestExpiresAt), keepN);
                     }
                     if (e.status() < 500) {
                         return issue(secret, input, details, Step.of("blocked").withReason(e.code() != null ? e.code() : e.error() != null ? e.error() : "offline_unavailable"), null);
@@ -362,6 +518,13 @@ public final class Guard {
             // Waiting on a push / passkey, or showing the offline QR next to a push still open: poll, run once approved.
             if (bound != null && !empty(rid) && WAITING.contains(String.valueOf(st))) {
                 Step now = Steps.check(client, rid);
+                // The live expiry: the status answer's when it parses (an escalation to a passkey extends it), else rx.
+                // The token re-issued below keeps the one used.
+                Long live = Steps.epochMillis(now.expiresAt());
+                if (live != null) {
+                    requestExpiresAt = now.expiresAt();
+                    keep.put("rx", live);
+                }
                 if ("approved".equals(now.state())) {
                     try {
                         Approval approval = Steps.complete(client, rid, new CompleteExpectations(user, action, input.details, input.referenceId));
@@ -373,7 +536,7 @@ public final class Guard {
                 }
                 // The push behind the QR moved to a passkey after a tap during a call: the QR's code would be refused now.
                 if ("offline".equals(st) && "passkey_required".equals(now.state())) {
-                    return issue(secret, input, details, Step.of("passkey_required").withRequestId(rid).withNumber(n), keepN);
+                    return issue(secret, input, details, Step.of("passkey_required").withRequestId(rid).withNumber(n).withExpiresAt(requestExpiresAt), keepN);
                 }
                 if ("offline".equals(st) && ("waiting".equals(now.state()) || "expired".equals(now.state()))) {
                     // Nothing changed for the user: keep showing the QR they have.
@@ -381,7 +544,8 @@ public final class Guard {
                 }
                 if ("waiting".equals(now.state()) || "passkey_required".equals(now.state())) {
                     // "Why?": the case code stays on screen while it waits.
-                    return issue(secret, input, details, Step.of(now.state()).withRequestId(rid).withNumber(n).withCaseCode(Json.str(bound, "cc")), keepN);
+                    return issue(secret, input, details, Step.of(now.state()).withRequestId(rid).withNumber(n).withCaseCode(Json.str(bound, "cc"))
+                            .withExpiresAt(requestExpiresAt), keepN);
                 }
                 return issue(secret, input, details, Step.of(now.state()).withRequestId(rid), null);
             }
@@ -444,6 +608,9 @@ public final class Guard {
         putNullable(claims, "oc", step.offline() == null ? null : step.offline().challengeId());
         claims.put("exp", System.currentTimeMillis() + TOKEN_TTL_MS);
         if (step.caseCode() != null) claims.put("cc", step.caseCode());
+        // A push or passkey on its way: its polls repeat when the request expires (rx, ms since the epoch).
+        Long rx = ON_THE_PHONE.contains(step.state()) ? Steps.epochMillis(step.expiresAt()) : null;
+        if (rx != null) claims.put("rx", rx);
         // A first-time QR: its polls keep it until it expires (ee, ms since the epoch).
         Long ee = step.enroll() == null || empty(step.enroll().qrCodeDataUrl()) ? null : Steps.epochMillis(step.enroll().expiresAt());
         if (ee != null) claims.put("ee", ee);

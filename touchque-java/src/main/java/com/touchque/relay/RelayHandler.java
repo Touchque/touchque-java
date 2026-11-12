@@ -202,11 +202,12 @@ public final class RelayHandler<T> {
                 .enroll(enroll).browserProof(nonEmpty(proof)).silentSignIn(silent);
     }
 
+    /** A step or a refusal, as Guard.response builds it (the same answer as {@code @RequireTouchque}'s without an errorBody). */
     private static RelayResponse guardResponse(Guard.Result result) {
-        RelayResponse res = new RelayResponse(result.status(), result.body());
-        if (result.retryAfter() != null) res.setHeader("Retry-After", String.valueOf(result.retryAfter()));
-        result.refusalHeaders().forEach(res::setHeader);
-        return res.setHeader("Cache-Control", "no-store");
+        Guard.Response r = Guard.response(result, null);
+        RelayResponse res = new RelayResponse(r.status(), r.body());
+        r.headers().forEach(res::setHeader);
+        return res;
     }
 
     // ── Offline Sign ──────────────────────────────────────────────────────

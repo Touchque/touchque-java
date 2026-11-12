@@ -17,16 +17,15 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class TouchqueExceptionHandler {
     @ExceptionHandler(TouchqueStepException.class)
     public ResponseEntity<String> step(TouchqueStepException e) {
-        Guard.Result r = e.result();
-        ResponseEntity.BodyBuilder res = ResponseEntity.status(r.status()).contentType(MediaType.APPLICATION_JSON).header(HttpHeaders.CACHE_CONTROL, "no-store");
-        if (r.retryAfter() != null) res.header(HttpHeaders.RETRY_AFTER, r.retryAfter().toString());
-        r.refusalHeaders().forEach(res::header);
+        Guard.Response r = e.response();
+        ResponseEntity.BodyBuilder res = ResponseEntity.status(r.status()).contentType(MediaType.APPLICATION_JSON);
+        r.headers().forEach(res::header);
         String body;
         try {
-            body = Json.write(e.body() != null ? e.body() : r.body());
+            body = Json.write(r.body() != null ? r.body() : e.result().body());
         } catch (RuntimeException | StackOverflowError unwritable) {
             // A last resort (the guard already wrote an errorBody's result once): the guard's own body.
-            body = Json.write(r.body());
+            body = Json.write(e.result().body());
         }
         return res.body(body);
     }

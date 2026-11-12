@@ -2,17 +2,20 @@ package example.nokeys;
 
 import com.touchque.spring.RequireTouchque;
 import com.touchque.spring.TouchqueGuardOptions;
+import example.handler.GuardHandler;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** An app with a guarded method and no Touchque API key or secret. */
+/** An app with a guarded method, the README's guard inside a handler, and no Touchque API key or secret. */
 @SpringBootApplication
+@Import(GuardHandler.class)
 public class NoKeysApp {
     /** How often the guarded method ran. */
     public static final AtomicInteger RUNS = new AtomicInteger();
