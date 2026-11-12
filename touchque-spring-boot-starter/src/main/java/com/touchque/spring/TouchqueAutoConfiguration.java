@@ -45,7 +45,10 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @EnableConfigurationProperties(TouchqueProperties.class)
 @Import({TouchqueLoginConfiguration.class, TouchqueResourceServerConfiguration.class})
 public class TouchqueAutoConfiguration {
-    /** Created on first use, so an app that only uses Touchque Login needs no API key. */
+    /**
+     * Created on first use, so an app that only uses Touchque Login needs no API key. Without one,
+     * {@link RequireTouchque} methods answer 500 {@code misconfigured} instead of failing the app.
+     */
     @Bean
     @Lazy
     @ConditionalOnMissingBean

@@ -25,6 +25,7 @@ public final class TouchqueGuardOptions {
     private Function<TouchqueGuardContext, Map<String, Object>> context;
     private Guard.SilentSignIn silentSignIn;
     private boolean enroll = true;
+    private TouchqueErrorBody errorBody;
 
     private TouchqueGuardOptions(String action) {
         this.action = action;
@@ -77,6 +78,12 @@ public final class TouchqueGuardOptions {
         return this;
     }
 
+    /** Your own body for this action's refusals (400 or more), instead of the {@link TouchqueErrorBody} bean's or the default one. */
+    public TouchqueGuardOptions errorBody(TouchqueErrorBody v) {
+        this.errorBody = v;
+        return this;
+    }
+
     Function<TouchqueGuardContext, String> user() {
         return user;
     }
@@ -99,5 +106,9 @@ public final class TouchqueGuardOptions {
 
     boolean enroll() {
         return enroll;
+    }
+
+    TouchqueErrorBody errorBody() {
+        return errorBody;
     }
 }

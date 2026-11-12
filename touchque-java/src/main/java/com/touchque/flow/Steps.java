@@ -18,6 +18,11 @@ import com.touchque.resources.Login;
 import com.touchque.resources.LoginRequestOptions;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -30,6 +35,7 @@ import java.util.Map;
  */
 public final class Steps {
     private static final Map<String, String> STATE_MAP = Map.of("PENDING", "waiting", "CONFIRMED", "approved", "REJECTED", "rejected", "EXPIRED", "expired");
+    private static final DateTimeFormatter ISO_MILLIS = new DateTimeFormatterBuilder().appendInstant(3).toFormatter(Locale.ROOT);
 
     private Steps() {
     }
@@ -106,7 +112,28 @@ public final class Steps {
             codes = new ArrayList<>();
             for (JsonNode c : rc) codes.add(c.asText());
         }
-        return new Step.Enroll(Json.str(res, "qrCodeDataUrl"), codes, Json.str(res, "expiresAt"));
+        // When the QR stops working: the API's expiresAt when it is ISO 8601, else now + ttlMs, else unknown.
+        String expiresAt = Json.str(res, "expiresAt");
+        if (epochMillis(expiresAt) == null) {
+            Long ttl = Json.lng(res, "ttlMs");
+            expiresAt = ttl != null && ttl > 0 ? iso(System.currentTimeMillis() + ttl) : null;
+        }
+        return new Step.Enroll(Json.str(res, "qrCodeDataUrl"), codes, expiresAt);
+    }
+
+    /** An ISO 8601 date-time with an offset ({@code Z} or {@code +03:00}) in ms since the epoch, or null. */
+    static Long epochMillis(String iso) {
+        if (iso == null || iso.isEmpty()) return null;
+        try {
+            return OffsetDateTime.parse(iso).toInstant().toEpochMilli();
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    /** ms since the epoch as ISO 8601 in UTC with milliseconds, like JavaScript's toISOString. */
+    static String iso(long epochMillis) {
+        return ISO_MILLIS.format(Instant.ofEpochMilli(epochMillis));
     }
 
     public static Step check(TouchqueClient client, String requestId) {

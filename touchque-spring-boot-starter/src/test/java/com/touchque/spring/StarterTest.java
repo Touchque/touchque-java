@@ -14,6 +14,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,6 +53,9 @@ class StarterTest {
         API.post("/__test/link", Map.of("user", "jane@acme.com"));
         TestApp.EVENTS.clear();
         TestApp.FAIL_NEXT_EVENT.set(false);
+        TestApp.ERROR_BODIES.set(0);
+        TestApp.ERROR_BODY_THROWS.set(false);
+        TestApp.ERROR_BODY_RESULT.set(null);
     }
 
     private HttpResponse<String> send(String method, String path, Object body, Map<String, String> headers) throws Exception {
@@ -87,6 +91,76 @@ class StarterTest {
         HttpResponse<String> frozen = send("POST", "/transfer", Map.of("amount", "1 EUR"), Map.of());
         assertEquals(423, frozen.statusCode());
         assertEquals("900", frozen.headers().firstValue("Retry-After").orElse(null));
+    }
+
+    @Test
+    void errorBodyKeepsTheAppsErrorShapeForRefusalsOnly() throws Exception {
+        // The bean's object, with the step under "touchque" (no token): 401 without a signed-in user.
+        HttpResponse<String> anonymous = send("POST", "/account", Map.of(), Map.of());
+        assertEquals(401, anonymous.statusCode());
+        assertEquals("no-store", anonymous.headers().firstValue("Cache-Control").orElse(null));
+        assertTrue(anonymous.headers().firstValue("Content-Type").orElse("").startsWith("application/json"));
+        assertEquals(Json.parse("{\"message\":\"Sign in first.\",\"code\":\"unauthenticated\",\"touchque\":{\"state\":\"blocked\",\"reason\":\"unauthenticated\"}}"),
+                Json.parse(anonymous.body()));
+        assertEquals(List.of("blocked", "unauthenticated"), List.of(anonymous.headers().firstValue("X-Touchque-State").orElse(""),
+                anonymous.headers().firstValue("X-Touchque-Reason").orElse("")));
+        assertEquals(1, TestApp.ERROR_BODIES.get());
+
+        // Never for a 202 step or an approval.
+        HttpResponse<String> waiting = send("POST", "/account", Map.of(), Map.of("X-Test-User", "jane@acme.com"));
+        assertEquals(202, waiting.statusCode());
+        assertTrue(waiting.headers().firstValue("X-Touchque-State").isEmpty());
+        String token = Json.parse(waiting.body()).get("token").asText();
+        API.post("/__test/approve", Map.of("via", "DEVICE"));
+        HttpResponse<String> done = send("POST", "/account", Map.of(), Map.of("X-Test-User", "jane@acme.com", "X-Touchque-Token", token));
+        assertEquals(Json.parse("{\"ok\":true,\"via\":\"DEVICE\"}"), Json.parse(done.body()));
+        assertEquals(1, TestApp.ERROR_BODIES.get());
+
+        // The status and headers stay.
+        API.post("/__test/opts", Map.of("frozen", true));
+        HttpResponse<String> frozen = send("POST", "/account", Map.of(), Map.of("X-Test-User", "jane@acme.com"));
+        assertEquals(List.of(423, "900", "no-store"), List.of(frozen.statusCode(), frozen.headers().firstValue("Retry-After").orElse(""),
+                frozen.headers().firstValue("Cache-Control").orElse("")));
+        assertEquals(Json.parse("{\"message\":\"Too many rejected approvals. Try again later.\",\"code\":\"frozen\","
+                + "\"touchque\":{\"state\":\"frozen\",\"retryAfter\":900,\"caseCode\":\"REF-USE\"}}"), Json.parse(frozen.body()));
+
+        // An action's own errorBody wins; a value that is not an object is sent as it is.
+        HttpResponse<String> transfer = send("POST", "/transfer", Map.of("amount", "1 EUR"), Map.of());
+        assertEquals(List.of(423, "900", "\"refused: frozen\""), List.of(transfer.statusCode(), transfer.headers().firstValue("Retry-After").orElse(""), transfer.body()));
+        // The state is in a header, since this body has no "touchque".
+        assertEquals(List.of("frozen", ""), List.of(transfer.headers().firstValue("X-Touchque-State").orElse(""), transfer.headers().firstValue("X-Touchque-Reason").orElse("")));
+        assertTrue(transfer.headers().firstValue("Content-Type").orElse("").startsWith("application/json"));
+
+        // A callback that throws, a checked exception included: the default body.
+        TestApp.ERROR_BODY_THROWS.set(true);
+        HttpResponse<String> fallback = send("POST", "/account", Map.of(), Map.of("X-Test-User", "jane@acme.com"));
+        assertEquals(423, fallback.statusCode());
+        JsonNode body = Json.parse(fallback.body());
+        assertEquals(List.of("frozen", false, true), List.of(body.get("touchque").get("state").asText(), body.has("message"), body.has("token")));
+    }
+
+    @Test
+    void anErrorBodyResultTheObjectMapperCannotWriteSendsTheDefaultBody() throws Exception {
+        API.post("/__test/opts", Map.of("frozen", true));
+        Map<String, Object> cycle = new HashMap<>();
+        cycle.put("self", cycle);
+        Map<String, Object> deep = new HashMap<>();
+        Map<String, Object> level = deep;
+        for (int i = 0; i < 1500; i++) {
+            Map<String, Object> next = new HashMap<>();
+            level.put("n", next);
+            level = next;
+        }
+        // A cycle never ends; 1,500 levels pass a tree conversion but not the 1,000-level limit of the answer written.
+        for (Object result : List.of(cycle, deep)) {
+            TestApp.ERROR_BODY_RESULT.set(result);
+            HttpResponse<String> res = send("POST", "/account", Map.of(), Map.of("X-Test-User", "jane@acme.com"));
+            assertEquals(List.of(423, "900", "frozen", "no-store"), List.of(res.statusCode(), res.headers().firstValue("Retry-After").orElse(""),
+                    res.headers().firstValue("X-Touchque-State").orElse(""), res.headers().firstValue("Cache-Control").orElse("")));
+            JsonNode body = Json.parse(res.body());
+            assertEquals(List.of("frozen", true, false), List.of(body.get("touchque").get("state").asText(), body.has("token"), body.has("n")));
+        }
+        assertEquals(2, TestApp.ERROR_BODIES.get());
     }
 
     @Test

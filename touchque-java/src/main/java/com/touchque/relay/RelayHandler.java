@@ -10,6 +10,7 @@ import com.touchque.TouchqueRejectedException;
 import com.touchque.TouchqueTimeoutException;
 import com.touchque.flow.Approval;
 import com.touchque.flow.Guard;
+import com.touchque.flow.Step;
 import com.touchque.internal.Json;
 import com.touchque.internal.SdkLog;
 import com.touchque.resources.Offline;
@@ -17,6 +18,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * Framework-agnostic relay: the routes a frontend ({@code @touchque/web}) needs for push 2FA,
@@ -158,8 +160,16 @@ public final class RelayHandler<T> {
         List<LoginDetail> details = o.getDetails == null ? null : o.getDetails.apply(req.nativeRequest());
         Guard.Input input = guardInput(req, user, o.actionType, details, o.getLoginUser != null, o.silentSignIn);
         // Polling an approval already sent is not a new attempt: its own, larger per-IP budget, never the user's push budget.
-        RelayResponse limited = Guard.isStatusPoll(tq, input) ? allow(req, "login-poll", null, POLLS_PER_ATTEMPT) : allow(req, "login", user, 1);
+        boolean poll = Guard.isStatusPoll(tq, input);
+        RelayResponse limited = poll ? allow(req, "login-poll", null, POLLS_PER_ATTEMPT) : allow(req, "login", user, 1);
         if (limited != null) return limited;
+        // Unless it starts something after all (a push once the phone is linked, a new first-time QR): that is charged like a fresh attempt.
+        if (poll) {
+            input.beforeStart(() -> {
+                int wait = wait(req, "login", user, 1);
+                return wait == 0 ? Optional.empty() : Optional.of(new Guard.Result(429, null, rateLimited(wait), Step.of("rate_limited").withRetryAfter(wait)));
+            });
+        }
         Guard.Result result = Guard.run(tq, input);
         if (result.approved() == null) return guardResponse(result);
         Approval approved = result.approved();
@@ -195,6 +205,7 @@ public final class RelayHandler<T> {
     private static RelayResponse guardResponse(Guard.Result result) {
         RelayResponse res = new RelayResponse(result.status(), result.body());
         if (result.retryAfter() != null) res.setHeader("Retry-After", String.valueOf(result.retryAfter()));
+        result.refusalHeaders().forEach(res::setHeader);
         return res.setHeader("Cache-Control", "no-store");
     }
 
@@ -427,13 +438,20 @@ public final class RelayHandler<T> {
 
     /** Null when allowed; otherwise the 429 to send (this IP or this user is over the limit for the route). */
     private RelayResponse allow(RelayRequest<T> req, String route, String user, int ipFactor) {
-        if (limiter == null) return null;
+        int wait = wait(req, route, user, ipFactor);
+        return wait == 0 ? null : new RelayResponse(429, rateLimited(wait)).setHeader("Retry-After", String.valueOf(wait));
+    }
+
+    /** Counts this request on the route's per-IP and per-user limits: seconds to wait when over one, else 0. */
+    private int wait(RelayRequest<T> req, String route, String user, int ipFactor) {
+        if (limiter == null) return 0;
         int ipWait = limiter.hit("ip|" + route + "|" + (req.ip() != null && !req.ip().isEmpty() ? req.ip() : "unknown"), limiter.perIp() * ipFactor);
         int userWait = empty(user) ? 0 : limiter.hit("user|" + route + "|" + user, limiter.perUser());
-        int wait = Math.max(ipWait, userWait);
-        if (wait == 0) return null;
-        return new RelayResponse(429, Json.object().put("error", "RATE_LIMITED").put("message", "Too many attempts. Try again later.").put("retryAfter", wait))
-                .setHeader("Retry-After", String.valueOf(wait));
+        return Math.max(ipWait, userWait);
+    }
+
+    private static ObjectNode rateLimited(int wait) {
+        return Json.object().put("error", "RATE_LIMITED").put("message", "Too many attempts. Try again later.").put("retryAfter", wait);
     }
 
     private static RelayResponse unauthorized() {

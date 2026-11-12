@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.flow.Approval;
 import com.touchque.flow.CompleteExpectations;
@@ -25,10 +26,14 @@ import com.touchque.resources.LoginRequestOptions;
 import com.touchque.resources.QrPairings;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -233,6 +238,131 @@ class ContractTest {
         Guard.Result ok = Guard.run(tq, g("new-offline@acme.com", token(wrong)).code("ABCD123"));
         assertEquals(200, ok.status());
         assertEquals(List.of("offline_code", "OFFLINE_CODE"), List.of(ok.approved().assurance().method(), ok.approved().confirmedVia()));
+    }
+
+    @Test
+    void guardKeepsTheFirstTimeQrWhileItIsUp() {
+        TouchqueClient tq = api.client();
+        Guard.Result first = Guard.run(tq, g("qr@acme.com", null));
+        JsonNode enroll = step(first).get("enroll");
+        assertEquals("data:image/png;base64,QR-qr@acme.com", enroll.get("qrCodeDataUrl").asText());
+        String expiresAt = enroll.get("expiresAt").asText();
+        long ee = Instant.parse(expiresAt).toEpochMilli();
+        assertTrue(Math.abs(ee - (System.currentTimeMillis() + 300_000)) < 30_000, expiresAt);   // the API's 5 minutes
+        assertEquals(ee, Steps.verifyGuardToken("test_secret", token(first)).get("ee").asLong());
+        assertTrue(Guard.isStatusPoll(tq, g("qr@acme.com", token(first))));
+        assertFalse(Guard.isStatusPoll(tq, g("eve@acme.com", token(first))));
+
+        // A poll reads the link state only: the page keeps the QR and recovery codes it shows.
+        int before = api.calls().size();
+        Guard.Result poll = Guard.run(tq, g("qr@acme.com", token(first)));
+        assertEquals(202, poll.status());
+        assertEquals(Json.object().put("state", "enroll").put("expiresAt", expiresAt), step(poll));
+        ArrayNode calls = api.calls();
+        assertEquals(before + 1, calls.size());
+        assertEquals(List.of("GET", "/users/qr%40acme.com"), List.of(calls.get(before).get("method").asText(), calls.get(before).get("path").asText()));
+        ObjectNode claims = Steps.verifyGuardToken("test_secret", token(poll));
+        assertEquals(List.of("enroll", ee), List.of(claims.get("st").asText(), claims.get("ee").asLong()));
+        Guard.Result again = Guard.run(tq, g("qr@acme.com", token(poll)));
+        assertEquals(Json.object().put("state", "enroll").put("expiresAt", expiresAt), step(again));
+
+        // Linked: the push starts.
+        api.link("qr@acme.com");
+        Guard.Result waiting = Guard.run(tq, g("qr@acme.com", token(again)));
+        assertEquals(List.of(202, "waiting"), List.of(waiting.status(), step(waiting).get("state").asText()));
+        api.approve(null);
+        assertEquals(200, Guard.run(tq, g("qr@acme.com", token(waiting))).status());
+    }
+
+    @Test
+    void aFirstTimeQrAboutToExpireOrGoneIsReplaced() {
+        TouchqueClient tq = api.client();
+        // A QR within 15 s of its expiry is replaced: a new one, with new recovery codes.
+        api.opts(Map.of("secretTtlMs", 10_000));
+        Guard.Result first = Guard.run(tq, g("short@acme.com", null));
+        assertEquals("data:image/png;base64,QR-short@acme.com", step(first).get("enroll").get("qrCodeDataUrl").asText());
+        // The poll that renews it is not a status poll: relays count it against the user's limit.
+        assertFalse(Guard.isStatusPoll(tq, g("short@acme.com", token(first))));
+        Guard.Result next = Guard.run(tq, g("short@acme.com", token(first)));
+        assertEquals("data:image/png;base64,QR2-short@acme.com", step(next).get("enroll").get("qrCodeDataUrl").asText());
+        assertEquals("r2", step(next).get("enroll").get("recoveryCodes").get(0).asText());
+        assertEquals("/auth/secret/reset", api.lastCall().get("path").asText());
+
+        // Touchque no longer knows the user (404): the QR is gone, a new one.
+        api.opts(Map.of("secretTtlMs", 300_000));
+        Guard.Result fresh = Guard.run(tq, g("gone@acme.com", null));
+        api.reset();
+        Guard.Result renewed = Guard.run(tq, g("gone@acme.com", token(fresh)));
+        assertEquals("data:image/png;base64,QR-gone@acme.com", step(renewed).get("enroll").get("qrCodeDataUrl").asText());
+        assertEquals("/auth/generate-secret", api.lastCall().get("path").asText());
+
+        // A 5.0 token (no ee): every poll starts again, as before.
+        ObjectNode old = Json.object().put("u", "old@acme.com").put("a", "LOGIN").put("d", "").putNull("r").put("st", "enroll")
+                .put("exp", System.currentTimeMillis() + 60_000);
+        Guard.run(tq, g("old@acme.com", null));
+        assertFalse(Guard.isStatusPoll(tq, g("old@acme.com", Steps.signGuardToken("test_secret", old))));
+        Guard.Result restarted = Guard.run(tq, g("old@acme.com", Steps.signGuardToken("test_secret", old)));
+        assertEquals("data:image/png;base64,QR2-old@acme.com", step(restarted).get("enroll").get("qrCodeDataUrl").asText());
+
+        // A status poll only while the QR is up: a replayed token of an expired QR counts against the limit.
+        long now = System.currentTimeMillis();
+        assertTrue(Guard.isStatusPoll(tq, g("old@acme.com", Steps.signGuardToken("test_secret", old.deepCopy().put("ee", now + 60_000)))));
+        assertFalse(Guard.isStatusPoll(tq, g("old@acme.com", Steps.signGuardToken("test_secret", old.deepCopy().put("ee", now + 10_000)))));
+        assertFalse(Guard.isStatusPoll(tq, g("old@acme.com", Steps.signGuardToken("test_secret", old.deepCopy().put("ee", now - 1_000)))));
+    }
+
+    @Test
+    void beforeStartRunsOnceBeforeAFirstTimeQrPollStartsAnythingAndItsAnswerWins() {
+        TouchqueClient tq = api.client();
+        AtomicInteger calls = new AtomicInteger();
+        Guard.Result stop = new Guard.Result(429, null, Json.object().put("error", "RATE_LIMITED"), Step.of("rate_limited").withRetryAfter(7));
+        Supplier<Optional<Guard.Result>> charge = () -> {
+            calls.incrementAndGet();
+            return Optional.of(stop);
+        };
+        // A fresh attempt, and a poll that keeps the QR: nothing to charge.
+        Guard.Result first = Guard.run(tq, g("hook@acme.com", null).beforeStart(charge));
+        Guard.Result keep = Guard.run(tq, g("hook@acme.com", token(first)).beforeStart(charge));
+        assertEquals(List.of("enroll", 202, 0), List.of(step(first).get("state").asText(), keep.status(), calls.get()));
+        // Linked: the push would start; the hook's answer is sent instead and nothing starts.
+        api.link("hook@acme.com");
+        int before = api.calls().size();
+        assertEquals(stop, Guard.run(tq, g("hook@acme.com", token(first)).beforeStart(charge)));
+        assertEquals(List.of(1, before + 1), List.of(calls.get(), api.calls().size()));   // the link state only
+        Guard.Result waiting = Guard.run(tq, g("hook@acme.com", token(first)).beforeStart(() -> {
+            calls.incrementAndGet();
+            return Optional.empty();
+        }));
+        assertEquals(List.of("waiting", 2), List.of(step(waiting).get("state").asText(), calls.get()));
+        // A QR in its last 15 s, and a QR Touchque no longer knows (404): called before the new QR.
+        api.opts(Map.of("secretTtlMs", 10_000));
+        Guard.Result near = Guard.run(tq, g("near@acme.com", null));
+        assertEquals(stop, Guard.run(tq, g("near@acme.com", token(near)).beforeStart(charge)));
+        api.reset();
+        assertEquals(stop, Guard.run(tq, g("near@acme.com", token(near)).beforeStart(charge)));
+        assertEquals(4, calls.get());
+        assertEquals(List.of("GET"), api.calls().findValuesAsText("method"));   // no new secret
+        // A waiting token is not a first-time QR: not called.
+        api.link("near@acme.com");
+        Guard.Result push = Guard.run(tq, g("near@acme.com", null));
+        Guard.run(tq, g("near@acme.com", token(push)).beforeStart(charge));
+        assertEquals(4, calls.get());
+    }
+
+    @Test
+    void aPollThatWasAStatusPollStillGoesThroughBeforeStartWhenItRenewsTheQr() throws Exception {
+        TouchqueClient tq = api.client();
+        api.opts(Map.of("secretTtlMs", 16_000));   // 1 s above the 15 s margin
+        Guard.Result first = Guard.run(tq, g("margin@acme.com", null));
+        Guard.Input poll = g("margin@acme.com", token(first));
+        assertTrue(Guard.isStatusPoll(tq, poll));   // a relay counts it on the poll budget...
+        Thread.sleep(1_100);   // ...and the QR enters its last 15 s before the guard runs
+        AtomicInteger calls = new AtomicInteger();
+        Guard.Result renewed = Guard.run(tq, poll.beforeStart(() -> {
+            calls.incrementAndGet();
+            return Optional.empty();
+        }));
+        assertEquals(List.of(1, "data:image/png;base64,QR2-margin@acme.com"), List.of(calls.get(), step(renewed).get("enroll").get("qrCodeDataUrl").asText()));
     }
 
     @Test

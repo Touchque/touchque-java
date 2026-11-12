@@ -20,7 +20,15 @@ public class TouchqueExceptionHandler {
         Guard.Result r = e.result();
         ResponseEntity.BodyBuilder res = ResponseEntity.status(r.status()).contentType(MediaType.APPLICATION_JSON).header(HttpHeaders.CACHE_CONTROL, "no-store");
         if (r.retryAfter() != null) res.header(HttpHeaders.RETRY_AFTER, r.retryAfter().toString());
-        return res.body(Json.write(r.body()));
+        r.refusalHeaders().forEach(res::header);
+        String body;
+        try {
+            body = Json.write(e.body() != null ? e.body() : r.body());
+        } catch (RuntimeException | StackOverflowError unwritable) {
+            // A last resort (the guard already wrote an errorBody's result once): the guard's own body.
+            body = Json.write(r.body());
+        }
+        return res.body(body);
     }
 
     @ExceptionHandler(TouchqueMcpAuthException.class)

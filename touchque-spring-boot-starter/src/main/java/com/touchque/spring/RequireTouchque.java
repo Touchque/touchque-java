@@ -21,6 +21,7 @@ import java.lang.annotation.Target;
  *
  * Who approves is the signed-in user (email, else sub, else name). For transaction details, a
  * login route's user or silent sign-ins, declare a {@link TouchqueGuardOptions} bean for the action.
+ * Refusals keep your app's error shape with a {@link TouchqueErrorBody} bean.
  */
 @Target({ElementType.METHOD, ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)

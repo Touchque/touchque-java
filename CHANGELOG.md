@@ -3,7 +3,28 @@
 All notable changes to this project will be documented in this file. The
 format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [5.1.0] — 2026-11-12
+
+### Added
+- **Spring Boot: `errorBody` keeps your app's error shape.** A `TouchqueErrorBody` bean (every `@RequireTouchque` method) or `TouchqueGuardOptions.errorBody(…)` (one action) receives every refusal with status 400 or more (401, 403, 408, 423, 429, 500, 503) as a `Guard.Refusal`: `status`, `code` (`error.code`, else the step's `reason`, else its `state`), `message` (`error.message`, else a sentence for the state) and `touchque` (the step). It is never called for a 202 step or on approval.
+  - What it returns is written with the app's `ObjectMapper`. When that gives a JSON object (a Map, a record, a bean, an `ObjectNode`), it is sent with `touchque` set to the step, so `@touchque/web` still sees the state. No `token` is added.
+  - Anything else (a String, a number, a List, null) is sent as it is. The status and headers stay the same (`Cache-Control: no-store`, `Retry-After`, `X-Touchque-State`, `X-Touchque-Reason`). The callback gets a copy of the step.
+  - A callback that throws (a checked exception too, from Kotlin or `@SneakyThrows`), or a result the `ObjectMapper` cannot write (a cycle, more than 1,000 levels of nesting: it is written with the app's mapper and read back with the SDK's limits), logs `[Touchque] errorBody failed: <message>`, and the default body is sent.
+  - The bean is looked up only for a refusal, and only when it is the one bean of its type (or `@Primary`): two of them leave refusals with the default body and never touch a 202 step.
+  - `TouchqueStepException.body()` holds the body that is sent.
+- **Refusal headers.** Every guard answer with status 400 or more, from `@RequireTouchque` and from the relay routes, carries `X-Touchque-State: <state>`, and `X-Touchque-Reason: <reason>` when the step has one. `@touchque/web` 2.1.0 reads the step from them when a body has no `touchque` (an errorBody's string, say). A page on another origin must expose them (`Access-Control-Expose-Headers`). `Guard.Result.refusalHeaders()`, `Guard.STATE_HEADER` and `Guard.REASON_HEADER` give them to a guard of your own.
+- `Guard.Input.beforeStart(…)`: see the first-time linking fix below.
+- `Guard.Refusal.of(result)`, `Guard.withoutClient(input)` (401 without a user, else 500 `misconfigured`) and `Step.withExpiresAt(…)`, for guards of your own.
+- README: "Guard inside your handler" (`Guard.run` after your own checks, how to answer, running the action once, the 202 and first-time QR polls), the `errorBody` option and what a missing key answers.
+
+### Fixed
+- **First-time linking: one QR per enrollment, not one per poll.** In 5.0.0 every poll with an `enroll` token started again (login request, 404 `device_not_linked`, generate-secret 409, reset). Each 1.5 s poll replaced the QR and the recovery codes on screen, so the QR being scanned stopped working. Now:
+  - An `enroll` step with a QR carries `enroll.expiresAt`: the API's `expiresAt` when it is ISO 8601, else now + `ttlMs`, else none. Its token carries that expiry as the claim `ee`.
+  - A poll with that token only reads the link state (`auth().getUser`). Not linked and the QR good for more than 15 s: 202 `{"touchque":{"state":"enroll","expiresAt":…},"token":…}` without `enroll`, and the page keeps its QR. Linked: the push starts. Expired or about to, or the user unknown (404): a new QR. Other errors answer 503 `unavailable`.
+  - `Guard.isStatusPoll` is true for such a poll while the QR has more than 15 s left, so the relay's per-user limit no longer refuses enrollment polls.
+  - Every start is charged. `Guard.Input.beforeStart(…)` is called once, right before such a poll starts anything (a silent check or a push once the phone is linked, a new QR once the old one expired, is about to, or is gone), and a result it returns is answered instead. The relay's `POST /login` charges that start on the user's `login` limit like a fresh attempt and answers its usual 429 when it is over. So polls that only keep the QR are free, and replaying a first-time token can neither start pushes nor renew the secret on the poll budget.
+  - A 5.0 token (no `ee`) works as before. Pages on `@touchque/web` need 2.1.0.
+- **Spring Boot: a missing API key no longer throws on a guarded request.** The client bean was already built on first use, so the app started, but a `@RequireTouchque` method then failed with the bean's creation error. Now the guard looks the client bean up on each guarded request, inside its error handling (the starter's is a lazy singleton, built once; a prototype or per-tenant bean of yours is used as it is, never frozen to the first one). While it cannot be built (no `TQ_API_KEY` / `TQ_API_SECRET`), the method never runs: it answers 500 `misconfigured` (401 `unauthenticated` without a signed-in user) with `Cache-Control: no-store`. With `touchque.debug` the SDK logs once: `[Touchque] TQ_API_KEY and TQ_API_SECRET are not set: routes guarded by Touchque answer 500 misconfigured.` The relay routes and the webhook endpoint still need the keys at startup.
 
 ## [5.0.0] — 2026-11-11
 

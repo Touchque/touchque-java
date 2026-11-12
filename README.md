@@ -20,15 +20,15 @@ Maven:
 <dependency>
   <groupId>com.touchque</groupId>
   <artifactId>touchque-spring-boot-starter</artifactId>   <!-- Spring Boot (brings touchque-java) -->
-  <version>5.0.0</version>
+  <version>5.1.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("com.touchque:touchque-spring-boot-starter:5.0.0")   // Spring Boot
-implementation("com.touchque:touchque-java:5.0.0")                  // anything else
+implementation("com.touchque:touchque-spring-boot-starter:5.1.0")   // Spring Boot
+implementation("com.touchque:touchque-java:5.1.0")                  // anything else
 ```
 
 ## Setup
@@ -75,7 +75,58 @@ Your page shows the step in its own design. It then sends the same request again
 `X-Touchque-Token` (`@touchque/web` does this for you). Once approved, the method runs once.
 By default, the approver is the signed-in user: their email, else sub, else name.
 `TouchqueGuardOptions` can name someone else (`user`), a `referenceId`, a `context` for your
-Touchque Actions, `silentSignIn(Guard.SilentSignIn.on())` and `enroll(false)`.
+Touchque Actions, `silentSignIn(Guard.SilentSignIn.on())`, `enroll(false)` and `errorBody`.
+Refusals answer 403 (rejected, blocked), 408 (expired), 423 (frozen) or 429 (rate limited), with
+`Retry-After` on the last two and `Cache-Control: no-store` on every answer. Every refusal also
+carries `X-Touchque-State: <state>`, and `X-Touchque-Reason: <reason>` when the step has one. A
+page on another origin must expose them (`Access-Control-Expose-Headers`).
+
+### Refusals in your app's error shape (`errorBody`)
+
+By default, 403, 408, 423 and 429 refusals answer `{"touchque": step, "token": "..."}`, and 401,
+500 and 503 answer `{"touchque": step, "error": {"code": ..., "message": ...}}`. To keep your
+app's own error shape, declare a `TouchqueErrorBody` bean (every guarded method) or set
+`errorBody` on one action's `TouchqueGuardOptions`:
+
+```java
+@Bean
+TouchqueErrorBody touchqueErrors() {
+    return r -> Map.of("message", r.message(), "code", r.code());
+}
+// 403 {"message":"The approval was rejected.","code":"rejected","touchque":{"state":"rejected",...}}
+```
+
+- It is called for every answer with status 400 or more (401, 403, 408, 423, 429, 500, 503),
+  never for a 202 step or on approval.
+- `r.status()`; `r.code()`: the guard's `error.code`, else the step's `reason`, else its
+  `state`; `r.message()`: the guard's message, else a sentence for the state ("The approval was
+  rejected.", "The approval expired. Try again.", "Too many rejected approvals. Try again later.",
+  "Too many attempts. Try again later.", "The approval was refused."); `r.touchque()`: the step.
+- What it returns is written with your app's `ObjectMapper`. When that gives a JSON object (a
+  Map, a record, a bean, an `ObjectNode`), it is sent with `touchque` set to the step (the SDK's
+  key wins, so `@touchque/web` still sees the state). No `token` is added. Anything else (a
+  String, a number, a List, null) is sent as it is.
+- The status and headers stay the same: JSON, `Cache-Control: no-store`, `Retry-After`,
+  `X-Touchque-State`, `X-Touchque-Reason`. The callback gets a copy of the step.
+- If it throws (a checked exception too), or returns what the `ObjectMapper` cannot write (a
+  cycle, more than 1,000 levels of nesting), the default body is sent and `[Touchque] errorBody failed: <message>` is logged.
+- Declare one such bean, or mark one `@Primary`: with two, refusals keep the default body.
+
+### Without an API key
+
+The client bean is looked up on each guarded request (the starter's is built on the first one and
+kept; a prototype or per-tenant bean of yours is used as it is), so the app starts without
+`TQ_API_KEY` / `TQ_API_SECRET`. Until they are set, a `@RequireTouchque` method never runs. It
+answers 401 `unauthenticated` without a signed-in user, otherwise 500 with `Cache-Control: no-store`:
+
+```json
+{"touchque":{"state":"blocked","reason":"misconfigured"},"error":{"code":"misconfigured","message":"Two-factor approval is not configured correctly."}}
+```
+
+It is a 500 and not a 503 because it is a setup mistake to fix, not an outage to retry.
+`@touchque/web` shows "Approvals are not set up correctly on this site." With `touchque.debug=true`
+the SDK logs it once: `[Touchque] TQ_API_KEY and TQ_API_SECRET are not set: routes guarded by Touchque answer 500 misconfigured.`
+The relay routes and the webhook endpoint still need the keys when the app starts.
 
 ## Action types
 
@@ -103,8 +154,55 @@ Approval approval = tq.complete(step.requestId(),
 // uses the approval once, and only for this user, action and amount
 ```
 
-`Guard.run(tq, new Guard.Input(user, action).headers(request::getHeader)…)` runs the whole
-two-phase contract in any framework: Jakarta servlets, Micronaut, Quarkus, Javalin.
+## Guard inside your handler
+
+`Guard.run` is the whole two-phase contract of `@RequireTouchque` as one call, for any framework
+(Spring, Jakarta servlets, Micronaut, Quarkus, Javalin). Use it when your own checks must come
+first:
+
+```java
+@PostMapping("/transfer")
+ResponseEntity<?> transfer(@RequestBody Transfer t, HttpServletRequest request) {
+    String user = TouchqueSpring.user(request);
+    // 1. Your own checks first (ownership, balance): a request you refuse anyway never reaches the phone.
+    if (!accounts.canSend(user, t.amount())) return ResponseEntity.status(409).body(Map.of("error", "insufficient_funds"));
+
+    Guard.Result r = Guard.run(tq, new Guard.Input(user, "SEND_MONEY")
+        .details(List.of(LoginDetail.of("Amount", t.amount()), LoginDetail.of("To", t.to())))
+        .headers(request::getHeader)
+        .ip(TouchqueSpring.clientIp(request))
+        .userAgent(request.getHeader("User-Agent")));
+    if (r.approved() == null) {
+        // 2. A step (202) or a refusal: send r.status() and r.body() as they are.
+        var res = ResponseEntity.status(r.status()).contentType(MediaType.APPLICATION_JSON).cacheControl(CacheControl.noStore());
+        if (r.retryAfter() != null) res.header(HttpHeaders.RETRY_AFTER, r.retryAfter().toString());   // 423, 429
+        r.refusalHeaders().forEach(res::header);   // X-Touchque-State, X-Touchque-Reason
+        return res.body(r.body());
+    }
+    // 3. Approved: run the action once. The approval is used up.
+    return ResponseEntity.ok(payments.send(t));
+}
+```
+
+- Run it after your own checks (ownership, balance), with the details the phone shows, built on
+  your server.
+- Not approved: answer `r.status()` with `r.body()` as JSON and `Cache-Control: no-store`. On 423
+  and 429 add `Retry-After: r.retryAfter()`. On a refusal, add `r.refusalHeaders()`.
+- Approved (`r.approved()` is set): run the action once. A replay of the same token is refused.
+- 202 `{"touchque": step, "token": "..."}`: the page shows the step and sends the same request
+  again with `X-Touchque-Token: <token>`, every ~1.5 s (`touchqueFetch` from `@touchque/web` does
+  this). The token is bound to the user, action, details and `referenceId`.
+- While the first-time QR is up, polls answer `{state: "enroll", expiresAt}` without `enroll`:
+  keep showing the QR you have. A new QR comes with `enroll.qrCodeDataUrl` when the old one
+  expired. Pages on @touchque/web need 2.1.0.
+- `Guard.isStatusPoll(tq, input)` is true for a poll that only reads a state (a push on its way,
+  or a first-time QR with more than 15 s left), so your own rate limit can let it through. If it
+  does, charge what such a poll may still start in `beforeStart(() -> ...)`: the guard calls it
+  once, right before a first-time QR poll starts a push (the phone got linked) or a new QR, and
+  answers your result instead when you return one. The relay routes do this, so every start is
+  counted.
+- `Guard.Refusal.of(r)` gives a refusal's status, code and message for your own error body. While
+  no client can be built, `Guard.withoutClient(input)` answers what the guard answers then.
 
 ## Waiting in one call
 
@@ -449,8 +547,8 @@ Don't wrap the client in a retry layer. Retry `TouchqueNetworkException` at the 
 `HttpClient.Redirect.NEVER`.
 
 **Logging.** The SDK writes nothing to any log on its own. To see its own problems (a misconfigured
-guard, an `onChallenge` that threw, a relay error or a relay without `getLoginUser`, a silent
-sign-in check that failed), pass a `System.Logger`: `new TouchqueOptions().logger(System.getLogger("com.acme.touchque"))`,
+guard or missing keys behind one, an `errorBody` or `onChallenge` that threw, a relay error or a
+relay without `getLoginUser`, a silent sign-in check that failed), pass a `System.Logger`: `new TouchqueOptions().logger(System.getLogger("com.acme.touchque"))`,
 or `debug(true)` for System.Logger `touchque`. In Spring Boot, set `touchque.debug=true` and the
 level with `logging.level.touchque`. Lines carry an error's class, code and message, never a
 request or a user.

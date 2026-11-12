@@ -1,32 +1,56 @@
 package com.touchque.spring;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.NullNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.LoginDetail;
 import com.touchque.TouchqueClient;
+import com.touchque.TouchqueConfigException;
 import com.touchque.flow.Approval;
 import com.touchque.flow.Guard;
+import com.touchque.internal.Json;
+import com.touchque.internal.SdkLog;
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
 import org.springframework.aop.support.AopUtils;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-/** Runs the Touchque guard around methods marked {@link RequireTouchque}. */
+/**
+ * Runs the Touchque guard around methods marked {@link RequireTouchque}. The client bean is looked
+ * up on each guarded request (the starter's is a lazy singleton, built once); while it cannot be
+ * built (no API key or secret) the method answers 500 {@code misconfigured} (401 without a
+ * signed-in user) and never runs.
+ */
 final class TouchqueGuardInterceptor implements MethodInterceptor {
+    /** Why guarded methods answer 500 is logged once per process. */
+    private static final AtomicBoolean NO_CLIENT_LOGGED = new AtomicBoolean();
+
     private final ObjectProvider<TouchqueClient> client;
     private final ObjectProvider<TouchqueGuardOptions> optionBeans;
     private volatile Map<String, TouchqueGuardOptions> options;
+    private volatile BeanFactory beans;
 
     TouchqueGuardInterceptor(ObjectProvider<TouchqueClient> client, ObjectProvider<TouchqueGuardOptions> optionBeans) {
         this.client = client;
         this.optionBeans = optionBeans;
+    }
+
+    /** Where the {@link TouchqueErrorBody} bean, the app's ObjectMapper and the properties come from. */
+    void setBeanFactory(BeanFactory beans) {
+        this.beans = beans;
     }
 
     private Map<String, TouchqueGuardOptions> options() {
@@ -67,8 +91,9 @@ final class TouchqueGuardInterceptor implements MethodInterceptor {
                 .enroll(o.enroll())
                 .silentSignIn(o.silentSignIn())
                 .context(o.context() != null ? o.context().apply(context) : null);
-        Guard.Result result = Guard.run(client.getObject(), input);
-        if (result.approved() == null) throw new TouchqueStepException(result);
+        TouchqueClient tq = client();
+        Guard.Result result = tq == null ? Guard.withoutClient(input) : Guard.run(tq, input);
+        if (result.approved() == null) throw new TouchqueStepException(result, body(result, o, tq));
         request.setAttribute(TouchqueSpring.APPROVAL_ATTRIBUTE, result.approved());
         Object[] args = invocation.getArguments();
         Class<?>[] types = invocation.getMethod().getParameterTypes();
@@ -76,5 +101,91 @@ final class TouchqueGuardInterceptor implements MethodInterceptor {
             if (Approval.class.equals(types[i])) args[i] = result.approved();
         }
         return invocation.proceed();
+    }
+
+    /**
+     * The client bean, looked up on every request like 5.0 did, so a prototype or per-tenant bean is
+     * never frozen (Spring keeps a singleton and builds a failed one again). Null while it cannot be
+     * built for a setup error (logged once).
+     */
+    private TouchqueClient client() {
+        try {
+            return client.getObject();
+        } catch (RuntimeException e) {
+            TouchqueConfigException config = configError(e);
+            if (config == null) throw e;
+            if (NO_CLIENT_LOGGED.compareAndSet(false, true)) {
+                log(null).error(keysMissing() ? "[Touchque] TQ_API_KEY and TQ_API_SECRET are not set: routes guarded by Touchque answer 500 misconfigured."
+                        : "[Touchque] guard misconfigured: " + SdkLog.describe(config));
+            }
+            return null;
+        }
+    }
+
+    /** The TouchqueConfigException behind a failed client bean, or null. */
+    private static TouchqueConfigException configError(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof TouchqueConfigException c) return c;
+        }
+        return null;
+    }
+
+    /** No key or secret where the client bean reads them: touchque.api-key / api-secret, else TQ_API_KEY / TQ_API_SECRET. */
+    private boolean keysMissing() {
+        TouchqueProperties p = bean(TouchqueProperties.class);
+        String key = p != null && p.getApiKey() != null ? p.getApiKey() : System.getenv("TQ_API_KEY");
+        String secret = p != null && p.getApiSecret() != null ? p.getApiSecret() : System.getenv("TQ_API_SECRET");
+        return key == null || key.isEmpty() || secret == null || secret.isEmpty();
+    }
+
+    /**
+     * The body to send: the guard's, or for a refusal (400 or more) the errorBody's when one is set.
+     * A 202 step never looks the bean up, so two of them (none {@code @Primary}) cannot break it;
+     * refusals then keep the default body.
+     */
+    private JsonNode body(Guard.Result result, TouchqueGuardOptions o, TouchqueClient tq) {
+        Guard.Refusal refusal = Guard.Refusal.of(result);
+        if (refusal == null) return result.body();
+        TouchqueErrorBody errorBody = o.errorBody() != null ? o.errorBody() : unique(TouchqueErrorBody.class);
+        if (errorBody == null) return result.body();
+        try {
+            // Decided by the real encoding: written with the app's ObjectMapper and read back with the SDK's, so the
+            // answer sent meets the same write and read limits (nesting depth, sizes). What cannot be written falls back below.
+            Object value = errorBody.body(refusal);
+            JsonNode node = value == null ? NullNode.instance : Json.MAPPER.readTree(unique(ObjectMapper.class, Json.MAPPER).writeValueAsBytes(value));
+            // The SDK's key wins, so @touchque/web still sees the state.
+            if (node instanceof ObjectNode object) object.set("touchque", result.body().get("touchque").deepCopy());
+            return node != null ? node : NullNode.instance;
+        } catch (Exception | StackOverflowError e) {
+            // Checked exceptions too (a Kotlin lambda, @SneakyThrows), and a cycle in what it returned: the default body.
+            // Jackson's own message, without the reference chain (it names the app's fields and can run to kilobytes).
+            String message = e instanceof JsonProcessingException j ? j.getOriginalMessage() : e.getMessage();
+            log(tq).error("[Touchque] errorBody failed: " + (message != null ? message : e.getClass().getSimpleName()));
+            return result.body();
+        }
+    }
+
+    /** The SDK's logger: the client's, or without one, the logger {@code touchque} when touchque.debug is on. */
+    private SdkLog log(TouchqueClient tq) {
+        if (tq != null) return tq.http().log();
+        TouchqueProperties p = bean(TouchqueProperties.class);
+        return p != null && p.isDebug() ? new SdkLog(null, true) : SdkLog.SILENT;
+    }
+
+    private <T> T bean(Class<T> type) {
+        BeanFactory b = beans;
+        return b == null ? null : b.getBeanProvider(type).getIfAvailable();
+    }
+
+    /** The one bean of a type (or the {@code @Primary} one), else null: two of them are not an error here. */
+    private <T> T unique(Class<T> type) {
+        return unique(type, null);
+    }
+
+    /** The one bean of a type (or the {@code @Primary} one), else {@code fallback}: the app's ObjectMapper, else the SDK's. */
+    private <T> T unique(Class<T> type, T fallback) {
+        BeanFactory b = beans;
+        T bean = b == null ? null : b.getBeanProvider(type).getIfUnique();
+        return bean != null ? bean : fallback;
     }
 }

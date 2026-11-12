@@ -21,7 +21,7 @@ public record Step(String state, String requestId, String number, String expires
     public record Canary(String url) {
     }
 
-    /** First-time linking: show {@code qrCodeDataUrl}. */
+    /** First-time linking: show {@code qrCodeDataUrl}. {@code expiresAt}: when the QR stops working (ISO 8601). */
     public record Enroll(String qrCodeDataUrl, List<String> recoveryCodes, String expiresAt) {
     }
 
@@ -40,6 +40,10 @@ public record Step(String state, String requestId, String number, String expires
 
     public Step withNumber(String v) {
         return new Step(state, requestId, v, expiresAt, details, caseCode, reasons, telemetryToken, canary, enroll, offline, reason, retryAfter, assurance);
+    }
+
+    public Step withExpiresAt(String v) {
+        return new Step(state, requestId, number, v, details, caseCode, reasons, telemetryToken, canary, enroll, offline, reason, retryAfter, assurance);
     }
 
     public Step withDetails(List<LoginDetail> v) {
