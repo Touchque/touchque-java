@@ -35,11 +35,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
 /**
- * DPoP proofs for an ID-JAG key (RFC 9449): their shape, the method (trimmed, uppercased, an HTTP
- * token), the access token hash and a server nonce, the htu rules; and the one nonce retry of
- * requestIdJag and redeemIdJag against a token endpoint on this machine (section 8): the same request
- * once more with a new proof carrying a valid nonce, never a second time, never without a key, and the
- * latest valid nonce on the error. A 64 KB WWW-Authenticate header takes well under a second.
+ * DPoP proofs for an ID-JAG key (RFC 9449): their shape, the method (trimmed of ASCII whitespace,
+ * uppercased, an HTTP token), the access token hash and a server nonce, the htu rules; and the one nonce
+ * retry of requestIdJag and redeemIdJag against a token endpoint on this machine (section 8): the same
+ * request once more with a new proof carrying a valid nonce, asked for in the body or in the DPoP
+ * challenge's own error, never a second time, never without a key, and the latest valid nonce on the
+ * error. A 64 KB WWW-Authenticate header takes well under a second.
  */
 class IdJagDpopTest {
     private static final String NONCE_REFUSAL = "{\"error\":\"use_dpop_nonce\",\"error_description\":\"Authorization server requires nonce in DPoP proof\"}";
@@ -111,6 +112,11 @@ class IdJagDpopTest {
 
         assertEquals(6, jtis.size());   // a fresh jti every time
         assertTrue(CrossAppAccess.idJagDpopProof(key, url).split("\\.")[2].matches("[A-Za-z0-9_-]{86}"));   // 64 bytes, base64url, no padding
+
+        // A nonce given by hand goes in as it is: no syntax check (only the server's DPoP-Nonce header is checked).
+        for (String given : List.of("a b", "n\"1\\", "n\u00fc", " ")) {
+            assertEquals(given, Json.str(checked(CrossAppAccess.idJagDpopProof(key, null, url, null, given), key).claims(), "nonce"));
+        }
     }
 
     @Test
@@ -142,9 +148,11 @@ class IdJagDpopTest {
                 Map.entry("https://x.example/a;b=c/d@e:f+g$h,i!j*k'l(m)n&o=p", "https://x.example/a;b=c/d@e:f+g$h,i!j*k'l(m)n&o=p"));
         cases.forEach((url, expected) -> assertEquals(expected, htu(url), url));
         // Not an absolute http(s) URL the JDK's HttpClient could call.
-        for (String bad : List.of("/token", "token", "ftp://x.example/a", "https:example.com", "https://x.example/a b", "https://x.example:65536/")) {
+        for (String bad : List.of("/token", "token", "", "//x.example/token", "https://", "ftp://x.example/a", "https:example.com", "https://x.example/a b",
+                "https://x.example:65536/")) {
             assertThrows(TouchqueConfigException.class, () -> htu(bad), bad);
         }
+        assertThrows(TouchqueConfigException.class, () -> htu(null));
     }
 
     @Test
@@ -155,14 +163,18 @@ class IdJagDpopTest {
         cases.put(null, "POST");
         cases.put("", "POST");
         cases.put(" \t\r\n", "POST");
+        cases.put(" \t\r\n\u000b\f", "POST");
         cases.put(" get ", "GET");
         cases.put("\tPatch\n", "PATCH");
+        cases.put("\u000bput\f", "PUT");   // VT and FF are ASCII whitespace too
         cases.put("m-search", "M-SEARCH");
         cases.put("x!#$%&'*+-.^_`|~09", "X!#$%&'*+-.^_`|~09");
         cases.forEach((method, htm) -> assertEquals(htm, Json.str(checked(CrossAppAccess.idJagDpopProof(key, method, url, null, null), key).claims(), "htm"),
                 String.valueOf(method)));
-        // Anything but RFC 9110 token characters: a configuration error, never a proof.
-        for (String bad : List.of("GE T", "GET\u0000", "\u0000GET", "G\u00c9T", "g\u0131t", "get(1)", "\"GET\"", "GET,POST", "GET/1", "\u00a0GET", "GET\\")) {
+        // Anything but RFC 9110 token characters: a configuration error, never a proof. Only ASCII whitespace is trimmed,
+        // so NUL, U+00A0, the separators U+001C to U+001F and other Unicode spaces (which String.strip() drops) stay and fail.
+        for (String bad : List.of("GE T", "GET\u0000", "\u0000GET", "G\u00c9T", "g\u0131t", "get(1)", "\"GET\"", "GET,POST", "GET/1", "\u00a0GET", "GET\\",
+                "\u001cGET", "GET\u001f", "\u2003GET", "GET\u3000", "\u2028GET", "\u1680GET", "\u0085GET", "\u200bGET")) {
             assertThrows(TouchqueConfigException.class, () -> CrossAppAccess.idJagDpopProof(key, bad, url, null, null), bad);
         }
     }
@@ -290,6 +302,17 @@ class IdJagDpopTest {
             CrossAppAccess.redeemIdJag(new CrossAppAccess.RedeemOptions(ep.url, "acme-at-rs", "the.id.jag").clientSecret("rs_secret").dpopKey(key));
             assertSameRequestWithTheNonce(ep, key, "n-8");
         }
+        // Quoted strings with commas and escaped quotes are one value each; quoted-pairs are undone; names in any case.
+        for (String header : List.of("Basic YWxhZGRpbjpvcGVuc2VzYW1l, DPoP error=\"use_dpop_nonce\"",
+                "Bearer realm=\"a, DPoP error=\\\"x\\\"\", DPoP realm=\"b, c\", ERROR=\"use\\_dpop\\_nonce\"",
+                "DPoP, Error=use_dpop_nonce")) {
+            try (TokenEndpoint ep = new TokenEndpoint(seen -> "n-9".equals(nonceOf(seen.get(seen.size() - 1)))
+                    ? Reply.of(200, "{\"access_token\":\"at\",\"token_type\":\"DPoP\"}")
+                    : Reply.of(401, "", "WWW-Authenticate", header, "DPoP-Nonce", "n-9"))) {
+                CrossAppAccess.redeemIdJag(new CrossAppAccess.RedeemOptions(ep.url, "acme-at-rs", "the.id.jag").clientSecret("rs_secret").dpopKey(key));
+                assertSameRequestWithTheNonce(ep, key, "n-9");
+            }
+        }
     }
 
     @Test
@@ -324,6 +347,8 @@ class IdJagDpopTest {
                 TouchqueIdJagException e = assertThrows(TouchqueIdJagException.class,
                         () -> CrossAppAccess.redeemIdJag(new CrossAppAccess.RedeemOptions(ep.url, "acme-at-rs", "the.id.jag").clientSecret("rs_secret").dpopKey(key)));
                 assertEquals(Arrays.asList(c.error(), c.status(), c.nonce()), Arrays.asList(e.error(), e.status(), e.dpopNonce()), c.toString());
+                // No answer: the HTTP client's IOException is the cause.
+                if (c.status() == null) assertInstanceOf(IOException.class, e.getCause(), c.toString());
                 assertSameRequestWithTheNonce(ep, key, "n-1");
             }
         }
@@ -496,6 +521,16 @@ class IdJagDpopTest {
                 new Case(Reply.of(401, "", "WWW-Authenticate", "Bearer realm=\"DPoP error=use_dpop_nonce\"", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
                 new Case(Reply.of(401, "", "WWW-Authenticate", "DPoP error=\"use_dpop_nonce", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
                 new Case(Reply.of(401, "", "WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\"", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
+                // Only the DPoP challenge's own error: "DPoP" in a token68's place starts no challenge, an element that is
+                // neither a challenge nor a parameter ends the one before it, and the value is exactly use_dpop_nonce.
+                new Case(Reply.of(401, "", "WWW-Authenticate", "Bearer DPoP error=\"use_dpop_nonce\"", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
+                new Case(Reply.of(401, "", "WWW-Authenticate", "Basic DPoP, error=\"use_dpop_nonce\"", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
+                new Case(Reply.of(401, "", "WWW-Authenticate", "DPoP realm=\"x\", \"junk\", error=\"use_dpop_nonce\"", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
+                new Case(Reply.of(401, "", "WWW-Authenticate", "DPoP/1, error=\"use_dpop_nonce\"", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
+                new Case(Reply.of(401, "", "WWW-Authenticate", "DPoP error=\"use_dpop_nonce\"x", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
+                new Case(Reply.of(401, "", "WWW-Authenticate", "DPoP error=use_dpop_nonce_2", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
+                new Case(Reply.of(401, "", "WWW-Authenticate", "DPoP error=\"USE_DPOP_NONCE\"", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
+                new Case(Reply.of(401, "", "WWW-Authenticate", "DPoP-x error=\"use_dpop_nonce\"", "DPoP-Nonce", "n-1"), "server_error", 401, "n-1"),
                 // A DPoP-Nonce that is empty, not 1*NQCHAR (space, '"', '\', non-ASCII) or repeated with different values:
                 // no retry, and the error never carries it.
                 new Case(Reply.of(400, NONCE_REFUSAL, "DPoP-Nonce", ""), "use_dpop_nonce", 400, null),

@@ -1,9 +1,14 @@
 package com.touchque;
 
 /**
- * A refused ID-JAG or exchange (Cross App Access). {@link #error()} is the OAuth error:
- * {@code invalid_grant} for a bad ID-JAG, else what the server answered. {@link #dpopNonce()} is the
- * latest valid DPoP-Nonce the server sent during the call, when it sent one.
+ * A refused ID-JAG or exchange (Cross App Access). {@link #error()} is the OAuth error: {@code invalid_grant}
+ * for a bad ID-JAG, else what the server answered. From a token endpoint ({@code requestIdJag},
+ * {@code redeemIdJag}) that is the answer's {@code error} when it is an RFC 6749 error code, else
+ * {@code server_error}, for any status but 2xx (redirects included); {@code invalid_response} for a 2xx without
+ * a JSON object (or, from {@code requestIdJag}, without an ID-JAG); {@code temporarily_unavailable} when the
+ * server could not be reached or its answer could not be read, with no {@link #status()} and the failure as
+ * {@link #getCause()}. {@link #dpopNonce()} is the latest valid DPoP-Nonce the server sent during the call,
+ * when it sent one.
  */
 public class TouchqueIdJagException extends TouchqueException {
     private final String error;
@@ -12,6 +17,14 @@ public class TouchqueIdJagException extends TouchqueException {
 
     public TouchqueIdJagException(String error, String message, Integer status, String dpopNonce) {
         super(message);
+        this.error = error;
+        this.status = status;
+        this.dpopNonce = dpopNonce;
+    }
+
+    /** With {@code cause}: what failed underneath (the {@code IOException} of a token endpoint that could not be read). */
+    public TouchqueIdJagException(String error, String message, Integer status, String dpopNonce, Throwable cause) {
+        super(message, cause);
         this.error = error;
         this.status = status;
         this.dpopNonce = dpopNonce;
@@ -36,7 +49,8 @@ public class TouchqueIdJagException extends TouchqueException {
 
     /**
      * The latest {@code DPoP-Nonce} the server sent during the call (RFC 9449 section 8), or null: after a nonce retry
-     * the second answer's when it carried one, else the first answer's. Only a value in RFC 9449 nonce syntax
+     * the second answer's when it carried one, else the first answer's, on every error of the call (also
+     * {@code invalid_response} and {@code temporarily_unavailable}). Only a value in RFC 9449 nonce syntax
      * (printable ASCII except space, '"' and '\'), never one from a missing, empty, invalid or conflicting header. With a
      * DPoP key, a request refused with use_dpop_nonce and a valid nonce was already sent once more with it. To try
      * again yourself, put it in a new proof: {@code CrossAppAccess.idJagDpopProof(key, "POST", url, null, nonce)}.

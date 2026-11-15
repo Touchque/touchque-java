@@ -455,31 +455,45 @@ HttpRequest call = HttpRequest.newBuilder(URI.create(url)).GET()
     .header("DPoP", CrossAppAccess.idJagDpopProof(dpopKey, "GET", url, at, null))   // null: no server nonce
     .build();
 
-// Your authorization server (TokenEndpoint above), once it has verified this request's DPoP proof:
+// Your authorization server (TokenEndpoint above), once it has verified this request's DPoP proof
+// (and its nonce, if it asks for one):
 IdJagVerifier.Claims claims = verifier.verify(form.get("assertion"), authenticatedClientId, dpopJkt);   // claims.cnfJkt()
 ```
 
-A proof names its request. `htm` is the method, trimmed and uppercased (null or blank: POST; a
-method with characters outside an HTTP token throws `TouchqueConfigException`). `htu` is the URL
-with the scheme and host lowercased, the default port dropped, "/" for an empty path, the path kept
-as given (raw non-ASCII characters percent-encoded, as the JDK's HttpClient sends them), and no
-query or fragment.
+A proof names its request. `htm` is the method, trimmed of ASCII whitespace and uppercased (null
+or blank: POST; any other character outside an HTTP token, NUL and U+00A0 included, throws
+`TouchqueConfigException`). `htu` is the URL with the scheme and host lowercased, the default port
+dropped, "/" for an empty path, the path kept as given (raw non-ASCII characters percent-encoded,
+as the JDK's HttpClient sends them), and no query or fragment.
 
 `requestIdJag` and `redeemIdJag` retry once with a server nonce (RFC 9449 §8): on a 400 or 401
-`use_dpop_nonce` with a valid `DPoP-Nonce` header (one value, printable ASCII without spaces, `"`
-or `\`), they send the same request once more, with a new proof carrying that nonce, and no more.
+`use_dpop_nonce` with a valid `DPoP-Nonce` header (printable ASCII without spaces, `"` or `\`, and
+the same value if the header comes more than once), they send the same request once more, with a
+new proof carrying that nonce, and no more. A 401 may ask in its `DPoP` challenge instead
+(`WWW-Authenticate: DPoP error="use_dpop_nonce"`; only that challenge's own `error` counts).
 A missing, empty, invalid or conflicting `DPoP-Nonce` means no retry.
 `TouchqueIdJagException.dpopNonce()` is the latest valid `DPoP-Nonce` the server sent during the
 call (the retry's answer's, else the first answer's), or null. A resource server can ask the same
 way (401 with `WWW-Authenticate: DPoP error="use_dpop_nonce"` and a `DPoP-Nonce` header): sign the
 call again with that nonce as the last argument.
 
+Only a 2xx answer with a JSON object is a token endpoint's answer. Any other status, a redirect
+included (it is never followed), throws `TouchqueIdJagException` with that `status()` and the
+answer's `error` when it is an RFC 6749 error code, else `server_error`. A 2xx without a JSON object
+throws `invalid_response`. A token endpoint that cannot be reached or read (refused, reset, timed
+out, headers the JDK's HttpClient refuses, a body cut off or over 10 MB) throws
+`temporarily_unavailable` with no `status()` and the failure as `getCause()`; an interrupted call
+keeps the thread's interrupt status. Each of them carries `dpopNonce()`.
+
 An authorization server that accepts Touchque ID-JAGs, yours or a partner company's, must verify the
 DPoP proof itself (`typ` dpop+jwt, the signature with the `jwk` it carries, `htm`, `htu`, `iat`, a
-`jti` used once) and check `cnf.jkt`: refuse a bound ID-JAG unless the proof key's thumbprint
-matches. This SDK's verifier does the `cnf.jkt` part when given that thumbprint
-(`AgentKeys.thumbprint(jwk)`, for a P-256 or Ed25519 key): the three-argument `verify` checks it
-before the jti is used up; the two-argument `verify` refuses bound ID-JAGs.
+`jti` used once, and the nonce if it requires one) before it calls `verify`, because `verify` uses
+up the ID-JAG's `jti`. The other way round, a proof refused for its nonce (`use_dpop_nonce`) would
+leave the client's retry, which sends the same ID-JAG, refused as already used. It must also check
+`cnf.jkt`: refuse a bound ID-JAG unless the proof key's thumbprint matches. This SDK's verifier
+does the `cnf.jkt` part when given that thumbprint (`AgentKeys.thumbprint(jwk)`, for a P-256 or
+Ed25519 key): the three-argument `verify` checks it before the jti is used up; the two-argument
+`verify` refuses bound ID-JAGs.
 
 ## Touchque Login (hosted sign-in)
 

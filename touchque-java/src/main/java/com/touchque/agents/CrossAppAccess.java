@@ -1,9 +1,13 @@
 package com.touchque.agents;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.touchque.TouchqueConfigException;
 import com.touchque.TouchqueIdJagException;
+import com.touchque.TouchqueNetworkException;
 import com.touchque.TouchqueOptions;
 import com.touchque.crypto.AgentKeys;
 import com.touchque.crypto.Jws;
@@ -56,6 +60,12 @@ import java.util.function.Function;
  *     .header("Authorization", "DPoP " + at)
  *     .header("DPoP", CrossAppAccess.idJagDpopProof(dpopKey, "GET", url, at, null)).build();
  * }</pre>
+ *
+ * <p>Only a 2xx answer whose body is a JSON object is a token endpoint's answer. Any other status (redirects are
+ * never followed) throws {@link TouchqueIdJagException} with that status and the answer's {@code error} when it is
+ * an RFC 6749 error code (else {@code server_error}); a 2xx without a JSON object throws {@code invalid_response};
+ * a token endpoint that cannot be reached or read throws {@code temporarily_unavailable} with no status and the
+ * failure as its cause. An interrupted call also restores the thread's interrupt status.
  */
 public final class CrossAppAccess {
     public static final String ID_JAG_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:id-jag";
@@ -64,6 +74,10 @@ public final class CrossAppAccess {
     public static final String JWT_BEARER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 
     private static final HttpClient SHARED_CLIENT = TouchqueHttp.createClient(Duration.ofSeconds(10));
+    /** JSON with nothing after its one value but whitespace: a token endpoint's body is one JSON object or none. */
+    private static final ObjectReader ONE_JSON_VALUE = Json.MAPPER.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+    /** The longest {@code error} taken as an error code (RFC 6749 sets no length; a longer one is server_error). */
+    private static final int MAX_ERROR_CODE = 128;
 
     private CrossAppAccess() {
     }
@@ -218,26 +232,47 @@ public final class CrossAppAccess {
      * non-ASCII characters in the path are percent-encoded (UTF-8, NFC), as the JDK's HttpClient sends them; dot
      * segments, percent-encoding and an IP address host stay as written.
      *
-     * @param method the request's method: trimmed and sent uppercased as {@code htm}; null, empty or blank is POST. Any
-     *     character other than an RFC 9110 token character throws {@link TouchqueConfigException}.
+     * @param method the request's method: trimmed of ASCII whitespace (space, tab, CR, LF, VT, FF; not NUL, U+00A0 or
+     *     other Unicode spaces) and sent uppercased as {@code htm}; null, empty or blank is POST. Any other character
+     *     that is not an RFC 9110 token character throws {@link TouchqueConfigException}.
      * @param url an absolute http or https URL that {@link URI} parses with a host ({@link TouchqueConfigException} otherwise).
      * @param accessToken the DPoP-bound access token the request carries in {@code Authorization: DPoP <token>}
-     *     (adds {@code ath}), or null for a token endpoint.
-     * @param nonce the server's {@code DPoP-Nonce} (RFC 9449 sections 8 and 9), or null.
+     *     (adds {@code ath}), or null (or empty) for a token endpoint.
+     * @param nonce the server's {@code DPoP-Nonce} (RFC 9449 sections 8 and 9), or null (or empty) for none. It goes in
+     *     as given, without a syntax check.
      */
     public static String idJagDpopProof(IdJagDpopKey key, String method, String url, String accessToken, String nonce) {
         return TouchqueAgent.dpopProof(key.key, htm(method), htu(url), accessToken == null || accessToken.isEmpty() ? null : accessToken,
                 nonce == null || nonce.isEmpty() ? null : nonce);
     }
 
-    /** RFC 9449 htm: {@code method} trimmed and uppercased, POST when empty; an HTTP method is an RFC 9110 token. */
+    /**
+     * RFC 9449 htm: {@code method} trimmed of ASCII whitespace and uppercased, POST when empty; an HTTP method is an
+     * RFC 9110 token.
+     */
     static String htm(String method) {
-        String m = method == null ? "" : method.strip();
+        String m = method == null ? "" : trimAsciiWhitespace(method);
         if (m.isEmpty()) return "POST";
         for (int i = 0; i < m.length(); i++) {
             if (!tchar(m.charAt(i))) throw new TouchqueConfigException("a DPoP proof's method must be an HTTP method (RFC 9110 token characters only)");
         }
         return m.toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * {@code s} without the ASCII whitespace at either end: space, tab, LF, VT, FF and CR. Unlike {@link String#strip()},
+     * other Unicode spaces and the separators U+001C to U+001F stay (and then fail the token check).
+     */
+    private static String trimAsciiWhitespace(String s) {
+        int start = 0;
+        int end = s.length();
+        while (start < end && asciiWhitespace(s.charAt(start))) start++;
+        while (end > start && asciiWhitespace(s.charAt(end - 1))) end--;
+        return s.substring(start, end);
+    }
+
+    private static boolean asciiWhitespace(char c) {
+        return c == ' ' || (c >= '\t' && c <= '\r');   // \t \n VT \f \r
     }
 
     /** RFC 9449 htu: {@code url} as {@code scheme://host[:port]/path} (see {@link #idJagDpopProof(IdJagDpopKey, String, String, String, String)}). */
@@ -292,8 +327,9 @@ public final class CrossAppAccess {
     }
 
     /**
-     * A token endpoint's answer: its JSON object, the latest valid DPoP-Nonce the server sent during the call (see
-     * {@link CrossAppAccess#dpopNonce(List)}) and its WWW-Authenticate values (not read here).
+     * A token endpoint's answer: its body when that is one JSON object (else null), the latest valid DPoP-Nonce the
+     * server sent during the call (see {@link CrossAppAccess#dpopNonce(List)}) and its WWW-Authenticate values (not
+     * read here).
      */
     private record Answer(int status, ObjectNode data, String dpopNonce, List<String> challenges) {
         /**
@@ -308,7 +344,8 @@ public final class CrossAppAccess {
 
     /**
      * POSTs the form; with a DPoP key, a fresh proof goes along, and a server that asks for its nonce gets the same
-     * request once more with it. A refusal throws {@link TouchqueIdJagException}; else the answer.
+     * request once more with it. Only a 2xx with a JSON object is an answer: anything else throws
+     * {@link TouchqueIdJagException}, which carries the latest valid DPoP-Nonce of the call.
      */
     private static Answer postForm(String url, Map<String, String> form, String basicId, String basicSecret, IdJagDpopKey dpopKey) {
         if (!safeUrl(url)) throw new TouchqueConfigException(url + " must be an https URL");
@@ -328,38 +365,70 @@ public final class CrossAppAccess {
         if (dpopKey != null && a.wantsNonce()) {
             a = send(url, body.toString(), authorization, idJagDpopProof(dpopKey, "POST", url, null, a.dpopNonce()), a.dpopNonce());
         }
-        if (a.status() >= 400) {
-            String error = Json.str(a.data(), "error");
+        if (a.status() < 200 || a.status() > 299) {
+            // A refusal, or a redirect (never followed): the code is the body's error, never WWW-Authenticate's.
+            String error = errorCode(a.data());
             String description = Json.str(a.data(), "error_description");
             throw new TouchqueIdJagException(error != null ? error : "server_error", description != null ? description : url + " answered " + a.status(),
                     a.status(), a.dpopNonce());
+        }
+        if (a.data() == null) {
+            throw new TouchqueIdJagException("invalid_response", url + " answered " + a.status() + " without a JSON object", a.status(), a.dpopNonce());
         }
         return a;
     }
 
     /**
-     * One POST. {@code earlierNonce}: the valid DPoP-Nonce of the call's first answer, kept when this answer has none
-     * (and on a network error), so the error always carries the latest one the server sent.
+     * One POST. {@code latestNonce}: the valid DPoP-Nonce of the call's earlier answer, kept when this answer has none,
+     * so every error carries the latest one the server sent. A server that cannot be reached, an answer the HTTP client
+     * refuses (malformed or oversized headers) and a body that cannot be read (cut off, over 10 MB) throw
+     * temporarily_unavailable with no status, that latest nonce (this answer's when its headers came with a valid one)
+     * and the failure as the cause.
      */
-    private static Answer send(String url, String body, String authorization, String proof, String earlierNonce) {
+    private static Answer send(String url, String body, String authorization, String proof, String latestNonce) {
         HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10))
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
         if (proof != null) req.header("DPoP", proof);
         if (authorization != null) req.header("Authorization", authorization);
+        String nonce = latestNonce;
         try {
             HttpResponse<InputStream> res = SHARED_CLIENT.send(req.build(), HttpResponse.BodyHandlers.ofInputStream());
-            JsonNode parsed = Json.parse(TouchqueHttp.readLimited(res.body()));
-            String nonce = dpopNonce(res.headers().allValues("DPoP-Nonce"));
-            return new Answer(res.statusCode(), parsed instanceof ObjectNode o ? o : Json.object(), nonce != null ? nonce : earlierNonce,
-                    res.headers().allValues("WWW-Authenticate"));
-        } catch (IOException e) {
-            throw new TouchqueIdJagException("temporarily_unavailable", url + ": " + e.getMessage(), null, earlierNonce);
+            String answered = dpopNonce(res.headers().allValues("DPoP-Nonce"));
+            if (answered != null) nonce = answered;
+            ObjectNode data = jsonObject(TouchqueHttp.readLimited(res.body()));
+            return new Answer(res.statusCode(), data, nonce, res.headers().allValues("WWW-Authenticate"));
+        } catch (IOException | TouchqueNetworkException e) {
+            String why = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            throw new TouchqueIdJagException("temporarily_unavailable", url + ": " + why, null, nonce, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new TouchqueIdJagException("temporarily_unavailable", "interrupted", null, earlierNonce);
+            throw new TouchqueIdJagException("temporarily_unavailable", url + ": interrupted", null, nonce, e);
         }
+    }
+
+    /** The body when it is one JSON object (whitespace around it aside), else null: empty, null, an array, not JSON. */
+    private static ObjectNode jsonObject(String text) {
+        try {
+            return ONE_JSON_VALUE.readTree(text) instanceof ObjectNode o ? o : null;
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
+    /**
+     * The answer's {@code error} when it is an RFC 6749 error code: a string of 1 to 128 characters, each
+     * %x20-21 / %x23-5B / %x5D-7E (printable ASCII and space, except '"' and '\'). Else null (server_error).
+     */
+    static String errorCode(JsonNode data) {
+        String error = Json.str(data, "error");
+        if (error == null || error.isEmpty() || error.length() > MAX_ERROR_CODE) return null;
+        for (int i = 0; i < error.length(); i++) {
+            char c = error.charAt(i);
+            if (c < 0x20 || c > 0x7e || c == '"' || c == '\\') return null;
+        }
+        return error;
     }
 
     /**
@@ -383,23 +452,31 @@ public final class CrossAppAccess {
 
     /**
      * Whether WWW-Authenticate holds a DPoP challenge with error="use_dpop_nonce" (RFC 9449 section 9). One pass over
-     * each value (RFC 9110 section 11.6.1), with no regular expression, so a long header costs no stack. A malformed
-     * list element is skipped.
+     * each value (RFC 9110 section 11.6.1), with no regular expression, so a long header costs no stack and linear time.
+     * List elements split at commas outside quoted strings. An element that starts with a token not followed by "="
+     * starts a challenge: its auth-scheme, then a token68 or its first auth-param. Any other auth-param belongs to the
+     * challenge before it. A quoted-string value has its quoted-pairs undone; one that is never closed has no value.
+     * A malformed element is skipped, and one where a challenge would start ends the challenge before it.
      */
     private static boolean dpopNonceChallenge(List<String> headers) {
         for (String h : headers) {
             String scheme = null;
+            boolean elementStart = true;
             int i = 0;
             while (i < h.length()) {
                 char c = h.charAt(i);
                 if (c == ',' || c == ' ' || c == '\t') {
+                    if (c == ',') elementStart = true;
                     i++;
                     continue;
                 }
+                boolean first = elementStart;
+                elementStart = false;
                 int start = i;
                 i = tokenEnd(h, i);
                 int next = spacesEnd(h, i);
                 if (i == start) {
+                    if (first) scheme = null;
                     i = elementEnd(h, i);
                 } else if (next < h.length() && h.charAt(next) == '=') {
                     // An auth-param: token BWS "=" BWS ( token / quoted-string ).
@@ -426,10 +503,12 @@ public final class CrossAppAccess {
                         i = end;
                         if ("DPoP".equalsIgnoreCase(scheme) && "error".equalsIgnoreCase(name) && "use_dpop_nonce".equals(value)) return true;
                     }
-                } else if (next > i || next == h.length() || h.charAt(next) == ',') {
+                } else if (first && (next > i || next == h.length() || h.charAt(next) == ',')) {
                     scheme = h.substring(start, i);   // a challenge: its auth-scheme, then its params or token68
                     i = next;
                 } else {
+                    // After an auth-scheme, a token68 (never a scheme of its own); at an element's start, not a challenge.
+                    if (first) scheme = null;
                     i = elementEnd(h, i);
                 }
             }
