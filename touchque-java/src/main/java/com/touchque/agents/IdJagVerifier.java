@@ -18,11 +18,16 @@ import java.util.function.Function;
 
 /**
  * Your authorization server, taking ID-JAGs from an organization's identity provider: checks the
- * one an authenticated client presents (jwt-bearer grant) and uses it once.
+ * one an authenticated client presents (jwt-bearer grant) and uses it once. Build one and keep it:
+ * the used-once jti store and the key cache live in the instance.
  *
  * <pre>{@code
- * var verifier = new IdJagVerifier(new IdJagVerifier.Options("https://sso.touchque.com", "https://auth.files.example"));
+ * // Once, in a field of your token endpoint:
+ * private final IdJagVerifier verifier = new IdJagVerifier(new IdJagVerifier.Options("https://sso.touchque.com", "https://auth.files.example"));
+ * // Each token request:
  * var claims = verifier.verify(form.get("assertion"), authenticatedClientId);
+ * // An authorization server that checks DPoP proofs passes the proof key's thumbprint:
+ * var bound = verifier.verify(form.get("assertion"), authenticatedClientId, dpopJkt);   // bound.cnfJkt()
  * }</pre>
  */
 public final class IdJagVerifier {
@@ -84,9 +89,16 @@ public final class IdJagVerifier {
         }
     }
 
-    /** A checked ID-JAG. {@code sub}: the member at the identity provider; {@code clientId}: your client_id of the app that presented it. */
+    /**
+     * A checked ID-JAG. {@code sub}: the member at the identity provider; {@code clientId}: your client_id of the app that presented it;
+     * {@code cnfJkt}: the DPoP key thumbprint the ID-JAG is bound to (cnf.jkt), or null.
+     */
     public record Claims(String iss, String sub, String aud, String clientId, String jti, long issuedAt, long expiresAt, List<String> scopes,
-            String resource, String tenant, String email, Long authTime, List<String> amr, ObjectNode claims) {
+            String resource, String tenant, String email, Long authTime, List<String> amr, ObjectNode claims, String cnfJkt) {
+        public Claims(String iss, String sub, String aud, String clientId, String jti, long issuedAt, long expiresAt, List<String> scopes,
+                String resource, String tenant, String email, Long authTime, List<String> amr, ObjectNode claims) {
+            this(iss, sub, aud, clientId, jti, issuedAt, expiresAt, scopes, resource, tenant, email, authTime, amr, claims, null);
+        }
     }
 
     public IdJagVerifier(Options options) {
@@ -139,8 +151,19 @@ public final class IdJagVerifier {
         return new TouchqueIdJagException("invalid_grant", message);
     }
 
-    /** The ID-JAG, checked and used once; throws {@link TouchqueIdJagException} (error invalid_grant). */
+    /**
+     * The ID-JAG, checked and used once; throws {@link TouchqueIdJagException} (error invalid_grant). An ID-JAG bound
+     * to a DPoP key (cnf.jkt) is refused: use {@link #verify(String, String, String)} for those.
+     */
     public Claims verify(String assertion, String clientId) {
+        return verify(assertion, clientId, null);
+    }
+
+    /**
+     * The ID-JAG, checked and used once. {@code dpopJkt}: the thumbprint of the DPoP proof you verified on this
+     * request, or null; an ID-JAG bound to a key (cnf.jkt) is refused without a matching one.
+     */
+    public Claims verify(String assertion, String clientId, String dpopJkt) {
         Jws.Parts parts = Jws.split(assertion != null ? assertion : "");
         if (parts == null) throw bad("assertion is not a JWT");
         ObjectNode head = parts.header();
@@ -171,11 +194,21 @@ public final class IdJagVerifier {
         if (exp == null || exp + skew < now) throw bad("expired");
         if (iat == null || iat - skew > now) throw bad("issued in the future");
         if (sub == null || sub.isEmpty() || jti == null || jti.isEmpty()) throw bad("sub and jti are required");
+        // Before the jti is spent: a copy without the key cannot use the ID-JAG up.
+        String cnfJkt = null;
+        if (c.has("cnf")) {
+            JsonNode cnf = c.get("cnf");
+            String jkt = cnf.isObject() ? Json.str(cnf, "jkt") : null;
+            if (jkt == null) throw bad("unsupported confirmation method (only DPoP cnf.jkt)");
+            if (dpopJkt == null || dpopJkt.isEmpty()) throw bad("bound to a DPoP key: a DPoP proof with that key is required");
+            if (!dpopJkt.equals(jkt)) throw bad("the DPoP proof was made with another key");
+            cnfJkt = jkt;
+        }
         if (!firstUse.test(jti, exp)) throw bad("already used");
         String scope = Json.str(c, "scope");
         List<String> amr = new ArrayList<>();
         if (c.get("amr") != null && c.get("amr").isArray()) c.get("amr").forEach(a -> amr.add(a.asText()));
         return new Claims(issuer, sub, audience, clientId, jti, iat, exp, scope == null || scope.isEmpty() ? List.of() : List.of(scope.split(" ")),
-                Json.str(c, "resource"), Json.str(c, "tenant"), Json.str(c, "email"), Json.lng(c, "auth_time"), List.copyOf(amr), c);
+                Json.str(c, "resource"), Json.str(c, "tenant"), Json.str(c, "email"), Json.lng(c, "auth_time"), List.copyOf(amr), c, cnfJkt);
     }
 }

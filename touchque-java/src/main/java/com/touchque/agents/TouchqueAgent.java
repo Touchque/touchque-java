@@ -193,10 +193,16 @@ public final class TouchqueAgent {
 
     /** A DPoP proof (RFC 9449) for one call: {@code htu} is the URL without its query or fragment. */
     static String dpopProof(SigningKey key, String method, String url, String accessToken) {
-        ObjectNode claims = Json.object().put("htm", method.toUpperCase(java.util.Locale.ROOT)).put("htu", url.split("[?#]", 2)[0]).put("iat", Instant.now().getEpochSecond()).put("jti", Crypto.randomHex(16));
+        return dpopProof(key, method, url.split("[?#]", 2)[0], accessToken, null);
+    }
+
+    /** A DPoP proof for a ready {@code htu}: {@code ath} with an access token, {@code nonce} with a server's DPoP-Nonce. */
+    static String dpopProof(SigningKey key, String method, String htu, String accessToken, String nonce) {
+        ObjectNode claims = Json.object().put("htm", method.toUpperCase(java.util.Locale.ROOT)).put("htu", htu).put("iat", Instant.now().getEpochSecond()).put("jti", Crypto.randomHex(16));
         if (accessToken != null) claims.put("ath", AgentKeys.accessTokenHash(accessToken));
+        if (nonce != null) claims.put("nonce", nonce);
         ObjectNode header = Json.object().put("typ", "dpop+jwt");
-        header.set("jwk", key.publicJwk());
+        header.set("jwk", key.publicJwk());   // the public members only (P-256: kty, crv, x, y), which SigningKey builds itself
         return key.jws(header, claims);
     }
 

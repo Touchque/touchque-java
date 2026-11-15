@@ -1,6 +1,9 @@
 package com.touchque;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -9,14 +12,18 @@ import com.touchque.agents.AgentCard;
 import com.touchque.agents.CrossAppAccess;
 import com.touchque.agents.IdJagVerifier;
 import com.touchque.crypto.AgentKeys;
+import com.touchque.crypto.Jws;
 import com.touchque.internal.Base64Url;
 import com.touchque.internal.Json;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,6 +80,80 @@ class CrossAppAccessTest {
         assertEquals("already used", reason(() -> v.verify(jag.assertion(), "acme-at-rs")));
         JsonNode tokens = CrossAppAccess.redeemIdJag(new CrossAppAccess.RedeemOptions(api.baseUrl + "/rs/token", "acme-at-rs", jag.assertion()));
         assertEquals("Bearer", Json.str(tokens, "token_type"));
+    }
+
+    @Test
+    void dpopBoundRequestRedeemAndVerify() throws Exception {
+        // An identity provider and an authorization server that check the proof and bind to its key.
+        List<Jws.Parts> seen = new ArrayList<>();
+        List<String> jkts = new ArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", ex -> {
+            ex.getRequestBody().readAllBytes();
+            Jws.Parts proof = Jws.split(ex.getRequestHeaders().getFirst("DPoP"));
+            JsonNode jwk = proof != null ? proof.header().get("jwk") : null;
+            boolean ok = jwk != null && Jws.verify("ES256", jwk, proof.input(), proof.signature());
+            String jkt = ok ? AgentKeys.thumbprint(jwk) : null;
+            synchronized (seen) {
+                seen.add(proof);
+                jkts.add(jkt);
+            }
+            String out;
+            if (!ok) {
+                out = "{\"error\":\"invalid_dpop_proof\"}";
+            } else if ("/idp/token?x=1".equals(ex.getRequestURI().toString())) {
+                ObjectNode cnf = Json.object();
+                cnf.set("cnf", Json.object().put("jkt", jkt));
+                String jag = Base64Url.encode("{\"typ\":\"oauth-id-jag+jwt\",\"alg\":\"RS256\"}".getBytes(StandardCharsets.UTF_8)) + "."
+                        + Base64Url.encode(Json.write(cnf).getBytes(StandardCharsets.UTF_8)) + ".sig";
+                out = Json.write(Json.object().put("access_token", jag).put("issued_token_type", CrossAppAccess.ID_JAG_TOKEN_TYPE).put("token_type", "N_A"));
+            } else {
+                out = "{\"access_token\":\"at\",\"token_type\":\"DPoP\"}";
+            }
+            byte[] bytes = out.getBytes(StandardCharsets.UTF_8);
+            ex.getResponseHeaders().add("Content-Type", "application/json");
+            ex.sendResponseHeaders(ok ? 200 : 400, bytes.length);
+            ex.getResponseBody().write(bytes);
+            ex.close();
+        });
+        server.start();
+        String local = "http://127.0.0.1:" + server.getAddress().getPort();
+        try {
+            CrossAppAccess.IdJagDpopKey key = CrossAppAccess.createIdJagDpopKey();
+            CrossAppAccess.IdJagGrant got = CrossAppAccess.requestIdJag(new CrossAppAccess.RequestOptions("tqapp_test", "tqs_test", "idtoken:ada", "https://rs.example")
+                    .tokenEndpoint(local + "/idp/token?x=1").dpopKey(key));
+            assertEquals(Boolean.TRUE, got.dpopBound());
+            JsonNode tokens = CrossAppAccess.redeemIdJag(new CrossAppAccess.RedeemOptions(local + "/rs/token", "acme-at-rs", got.assertion()).dpopKey(key));
+            assertEquals("DPoP", Json.str(tokens, "token_type"));
+            assertEquals(2, seen.size());
+            assertEquals(List.of("dpop+jwt", "ES256", key.thumbprint()), List.of(Json.str(seen.get(0).header(), "typ"), Json.str(seen.get(0).header(), "alg"), jkts.get(0)));
+            assertFalse(seen.get(0).header().get("jwk").has("d"));
+            assertEquals(List.of("POST", local + "/idp/token"), List.of(Json.str(seen.get(0).claims(), "htm"), Json.str(seen.get(0).claims(), "htu")));
+            assertEquals(List.of(local + "/rs/token", key.thumbprint()), List.of(Json.str(seen.get(1).claims(), "htu"), jkts.get(1)));
+            assertNotEquals(Json.str(seen.get(0).claims(), "jti"), Json.str(seen.get(1).claims(), "jti"));
+        } finally {
+            server.stop(0);
+        }
+
+        // An identity provider that ignores DPoP answers with a bearer ID-JAG: dpopBound false.
+        CrossAppAccess.IdJagGrant plainJag = CrossAppAccess.requestIdJag(new CrossAppAccess.RequestOptions("tqapp_test", "tqs_test", "idtoken:ada", "https://rs.example")
+                .issuer(api.baseUrl + "/idp").dpopKey(CrossAppAccess.createIdJagDpopKey()));
+        assertEquals(Boolean.FALSE, plainJag.dpopBound());
+
+        // The verifier: a bound ID-JAG needs the proof key's thumbprint, refused before it is used up.
+        IdJagVerifier v = verifier();
+        ObjectNode boundClaims = Json.object();
+        boundClaims.set("cnf", Json.object().put("jkt", "right-key-thumbprint"));
+        String bound = mint(boundClaims, null);
+        assertEquals("bound to a DPoP key: a DPoP proof with that key is required", reason(() -> v.verify(bound, "acme-at-rs")));
+        assertEquals("the DPoP proof was made with another key", reason(() -> v.verify(bound, "acme-at-rs", "other-key")));
+        assertEquals("right-key-thumbprint", v.verify(bound, "acme-at-rs", "right-key-thumbprint").cnfJkt());
+        ObjectNode oddClaims = Json.object();
+        oddClaims.set("cnf", Json.object().put("x5t", "abc"));
+        String odd = mint(oddClaims, null);
+        assertEquals("unsupported confirmation method (only DPoP cnf.jkt)", reason(() -> v.verify(odd, "acme-at-rs", "x")));
+        // Unbound: as before, with or without a proof key.
+        assertNull(v.verify(mint(null, null), "acme-at-rs", "any").cnfJkt());
     }
 
     @Test

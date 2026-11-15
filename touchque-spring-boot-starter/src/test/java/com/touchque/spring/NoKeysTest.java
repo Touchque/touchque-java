@@ -2,6 +2,9 @@ package com.touchque.spring;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.touchque.TouchqueClient;
+import com.touchque.TouchqueOptions;
+import com.touchque.flow.Guard;
 import com.touchque.internal.Json;
 import example.nokeys.NoKeysApp;
 import java.net.URI;
@@ -17,7 +20,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
-/** No TQ_API_KEY / TQ_API_SECRET: the app starts, and a guarded method answers JSON and never runs. */
+/**
+ * No TQ_API_KEY / TQ_API_SECRET: the app starts, and a guarded method answers JSON and never runs. Guard's default
+ * client does not change that: the starter never uses it, even when one is set that works.
+ */
 @SpringBootTest(classes = NoKeysApp.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"touchque.api-key=", "touchque.api-secret=", "touchque.debug=true"})
 class NoKeysTest {
@@ -58,6 +64,9 @@ class NoKeysTest {
         boolean parents = jul.getUseParentHandlers();
         jul.addHandler(handler);
         jul.setUseParentHandlers(false);
+        FakeApi api = FakeApi.get();
+        api.post("/__test/link", Map.of("user", "jane@acme.com"));
+        Guard.setDefaultClient(new TouchqueClient(new TouchqueOptions().apiKey("tq_test_key").apiSecret("test_secret").baseUrl(api.baseUrl)));
         try {
             HttpResponse<String> anonymous = pay(Map.of());
             assertEquals(401, anonymous.statusCode());
@@ -80,6 +89,7 @@ class NoKeysTest {
             // Once per process, through the SDK's logger (touchque.debug).
             assertEquals(List.of(NOT_SET), lines);
         } finally {
+            Guard.setDefaultClient(null);
             jul.removeHandler(handler);
             jul.setUseParentHandlers(parents);
         }
