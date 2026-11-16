@@ -123,9 +123,10 @@ public class TestApp {
         throw (E) e;
     }
 
+    /** The signed-in user of the relay's enrollment and passkey routes comes from X-Test-Signed-In (none without it). */
     @Bean
     RelayOptions<HttpServletRequest> relayOptions() {
-        return new RelayOptions<HttpServletRequest>(req -> null)
+        return new RelayOptions<HttpServletRequest>(req -> req.getHeader("X-Test-Signed-In"))
                 .getLoginUser(req -> req.getHeader("X-Test-User"))
                 .onAuthenticated((req, res, info) -> res.setHeader("X-Signed-In", info.externalUsername()));
     }

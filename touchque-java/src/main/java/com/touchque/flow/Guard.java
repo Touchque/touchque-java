@@ -114,12 +114,20 @@ public final class Guard {
             return this;
         }
 
-        /** The end user's IP. */
+        /**
+         * The end user's IP: sent with the push, the silent check, the offline QR, the time-based
+         * code check ({@code codeType("totp")}) and a first-time QR (the phone shows where it was
+         * asked for).
+         */
         public Input ip(String v) {
             this.ip = v;
             return this;
         }
 
+        /**
+         * The end user's User-Agent: sent with the push, the silent check, the offline QR and a
+         * first-time QR, not with the time-based code check (that one sends only the IP).
+         */
         public Input userAgent(String v) {
             this.userAgent = v;
             return this;

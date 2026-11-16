@@ -67,7 +67,7 @@ public final class Steps {
             String message = String.valueOf(e.getMessage()).toLowerCase(Locale.ROOT);
             if (e.status() == 404 && ("device_not_linked".equals(code) || message.contains("linked device"))) {
                 // No QR may be shown here: say why, so a page stops instead of polling a step it cannot finish.
-                return o.enroll ? enrollStep(client, o.user) : Step.of("enroll").withReason("enrollment_off");
+                return o.enroll ? enrollStep(client, o) : Step.of("enroll").withReason("enrollment_off");
             }
             if (e.status() == 423) return Step.of("frozen").withRetryAfter(e.retryAfter()).withCaseCode(caseCode);
             if (e.status() == 429) return Step.of("rate_limited").withRetryAfter(e.retryAfter()).withCaseCode(caseCode);
@@ -86,10 +86,14 @@ public final class Steps {
         }
     }
 
-    /** First-time linking. Never unlinks a phone: a secret is only re-issued when the account is confirmed NOT linked. */
-    private static Step enrollStep(TouchqueClient client, String user) {
+    /**
+     * First-time linking. Never unlinks a phone: a secret is only re-issued when the account is confirmed NOT linked.
+     * The QR is asked for with the IP and User-Agent the login request carried, so the phone can show where it was asked for.
+     */
+    private static Step enrollStep(TouchqueClient client, StartOptions o) {
+        String user = o.user;
         try {
-            JsonNode gen = client.auth().generateSecret(user);
+            JsonNode gen = client.auth().generateSecret(user, o.ip, o.userAgent);
             return Step.of("enroll").withEnroll(enroll(gen));
         } catch (TouchqueApiException e) {
             if (e.status() != 409) throw e;
@@ -102,7 +106,7 @@ public final class Steps {
             if (current != null && (Json.bool(current, "used") || emptyToNull(Json.str(current, "deviceId")) != null)) {
                 return Step.of("enroll").withReason("already_linked");
             }
-            return Step.of("enroll").withEnroll(enroll(client.auth().resetSecret(user)));
+            return Step.of("enroll").withEnroll(enroll(client.auth().resetSecret(user, o.ip, o.userAgent)));
         }
     }
 

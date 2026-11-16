@@ -25,7 +25,7 @@ import java.util.Optional;
  * offline codes and passkeys, so you don't hand-write them. Same routes and behaviour as the Node
  * SDK's {@code touchqueRouter}:
  * <pre>
- * POST   /enroll/start                  (signed in)   generateSecret response
+ * POST   /enroll/start                  (signed in)   generateSecret response; sends the browser's IP and User-Agent, as POST /login does
  * GET    /enroll/status                 (signed in)   { linked, used, deviceId }
  * POST   /login                         (pre-auth)    202 { touchque: step, token } until approved
  * POST   /offline/challenge             (pre-auth)    QR for a phone with no internet
@@ -111,8 +111,10 @@ public final class RelayHandler<T> {
     private RelayResponse enrollStart(RelayRequest<T> req) {
         String userId = userId(req);
         if (userId == null) return unauthorized();
+        // Where the QR is asked for, the IP and User-Agent /login sends with a push: the phone shows it before it links.
+        String ip = nonEmpty(req.ip());
         try {
-            return new RelayResponse(200, tq.auth().generateSecret(userId));
+            return new RelayResponse(200, tq.auth().generateSecret(userId, ip, req.userAgent()));
         } catch (TouchqueApiException e) {
             if (e.status() != 409) return relayError(e);
             // 409: a QR was issued and not scanned yet (safe to issue a new one), or a phone is ALREADY
@@ -123,7 +125,7 @@ public final class RelayHandler<T> {
                 if (Json.bool(current, "used") || !empty(Json.str(current, "deviceId"))) {
                     return new RelayResponse(409, Json.object().put("error", "already_linked").put("message", "A phone is already linked to this account."));
                 }
-                return new RelayResponse(200, tq.auth().resetSecret(userId));
+                return new RelayResponse(200, tq.auth().resetSecret(userId, ip, req.userAgent()));
             } catch (RuntimeException retry) {
                 return relayError(retry);
             }

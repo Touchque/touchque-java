@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file. The
 format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [5.4.0] — 2026-11-16
+
+### Added
+- **2FA setup context: the phone shows where a first-time QR was asked for.** `tq.auth().generateSecret(externalUsername, clientIp, userAgent)` and `resetSecret(externalUsername, clientIp, userAgent)` send the end user's IP and User-Agent with a login request's rule: each only when it is not null or empty, as given (no trimming, no length cap). Touchque keeps where the QR was asked for with the secret, never in the QR, and the phone shows it before it links, so someone tricked into scanning another person's QR sees that person's city and device. Both calls record it: a reset's new QR shows the browser that asked for it, and a reset given neither drops the old QR's context, so the new QR has none. Touchque cleans both values itself (a port dropped, a loopback or non-IP address ignored, control characters stripped from the User-Agent, which is cut at 512) and never refuses the call over them. The one-argument forms are unchanged and send neither.
+  - Every place the SDK asks for a first-time QR while handling a browser's request sends the IP and User-Agent that request's push gets: the guard's `enroll` step and its new QR about 15 s before the old one expires (`Guard.run`, `tq.start`, `@RequireTouchque`, the relay's `POST /login`), and the relay's `POST /enroll/start` (generate, and the reset when a QR is already up). They come from where the push's do: `Guard.Input.ip`/`userAgent`, `StartOptions.ip`/`userAgent`, `RelayRequest.ip()`/`userAgent()` (an empty IP is not sent), and in the Spring Boot starter `TouchqueSpring.clientIp(request)` (`getRemoteAddr()`: the SDK never reads `X-Forwarded-For` itself; behind a proxy, `server.forward-headers-strategy` decides) with the `User-Agent` header. Without an IP or User-Agent, none is sent, as for the push. The push requests themselves are unchanged.
+  - `Auth.SetupContext`, `Auth.SetupLocation` and `Auth.SetupDevice`: the `setupContext` of a `validateSecret` answer, typed: `ip`, `location` (`city`, `country`, `countryCode`), `device` (`browser`, `os`, `model`), `requestedAt` (the ISO 8601 string as sent) and `farFromPhone` (a `Boolean`), every field nullable. `Auth.SetupContext.parse(raw)` reads the raw `setupContext` value leniently: null when it is null, missing or not an object (the QR request named no usable IP or User-Agent, or an older QR or server); a field that is missing or of the wrong type is null (a `device` or `location` object whose fields are all of the wrong type stays an object of nulls); unknown fields are ignored; it never throws. `Auth.SetupContext.of(answer)` reads it from a whole answer, as `parse(answer.get("setupContext"))`. `validateSecret` still returns the JSON as it came. It is the phone's call (the Touchque app makes it after it scans): `farFromPhone` compares where the QR was asked for with the address that calls validate, so called from your server it compares with your server, not the phone.
+- README: "First-time QR: setup context", under "The three primitives".
+
+### Changed
+- Docs: `DeviceRisk.Signal.code` lists the codes the API now returns too: `device_pointer_synthetic`, `device_new_storage_burst` and `device_network_signup_burst` (phones are told apart only by their stored id and key since 2026-11-15, so the risk engine counts new browsers and sign-ups per kind of phone and network). No code change.
+
 ## [5.3.0] — 2026-11-15
 
 ### Added

@@ -20,15 +20,15 @@ Maven:
 <dependency>
   <groupId>com.touchque</groupId>
   <artifactId>touchque-spring-boot-starter</artifactId>   <!-- Spring Boot (brings touchque-java) -->
-  <version>5.3.0</version>
+  <version>5.4.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("com.touchque:touchque-spring-boot-starter:5.3.0")   // Spring Boot
-implementation("com.touchque:touchque-java:5.3.0")                  // anything else
+implementation("com.touchque:touchque-spring-boot-starter:5.4.0")   // Spring Boot
+implementation("com.touchque:touchque-java:5.4.0")                  // anything else
 ```
 
 ## Setup
@@ -154,6 +154,35 @@ Step now = tq.check(step.requestId());
 Approval approval = tq.complete(step.requestId(),
     new CompleteExpectations("jane@acme.com", "SEND_MONEY", List.of(LoginDetail.of("Amount", "250 EUR")), null));
 // uses the approval once, and only for this user, action and amount
+```
+
+### First-time QR: setup context
+
+Touchque records where a first-time QR was asked for (IP, city and country, browser and OS, time)
+with the secret, never in the QR, and the phone shows it before it links: someone tricked into
+scanning another person's QR sees that person's city and device. `generateSecret` and
+`resetSecret` both record it from the IP and User-Agent they are given; a reset given neither
+drops the old QR's context, so the new QR has none. `@RequireTouchque` and the starter's relay routes
+send the browser's IP and User-Agent for you; `Guard.run`, `tq.start` and `RelayHandler` send the
+ones you give them for the push. When you call `generateSecret` or `resetSecret` yourself, pass
+them from the request as you do for a login request.
+
+`validateSecret` is the phone's call: the Touchque app makes it after it scans, and the
+`farFromPhone` of its `setupContext` compares where the QR was asked for with the address that
+calls validate. Called from your server (a test, a support tool), it compares with your server,
+not the phone. `Auth.SetupContext.of(answer)` reads `setupContext` from the answer, and
+`Auth.SetupContext.parse(raw)` reads the raw value. Both give null when nothing was recorded (no
+usable IP or User-Agent was sent, or an older QR), and any field may be null:
+
+```java
+JsonNode qr = tq.auth().generateSecret(user, TouchqueSpring.clientIp(request), request.getHeader("User-Agent"));   // resetSecret takes them too
+JsonNode answer = tq.auth().validateSecret(qr.get("secret").asText());   // as the phone would; farFromPhone: against this server
+Auth.SetupContext where = Auth.SetupContext.of(answer);   // = Auth.SetupContext.parse(answer.get("setupContext")); null: none
+if (where != null) {
+    String city = where.location() != null ? where.location().city() : null;      // "Berlin"
+    String browser = where.device() != null ? where.device().browser() : null;   // "Safari"
+    // where.ip(), where.requestedAt() and where.farFromPhone() may be null too
+}
 ```
 
 ## Guard inside your handler

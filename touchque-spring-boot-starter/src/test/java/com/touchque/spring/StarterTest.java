@@ -223,6 +223,42 @@ class StarterTest {
         assertEquals(400, send("POST", "/touchque/login", "{not json", Map.of("X-Test-User", "jane@acme.com")).statusCode());
     }
 
+    /** The bodies the fake API got on {@code path}, in order. */
+    static List<JsonNode> bodies(String path) throws Exception {
+        List<JsonNode> out = new ArrayList<>();
+        for (JsonNode call : API.get("/__test/calls")) {
+            if (path.equals(call.get("path").asText())) out.add(call.get("body"));
+        }
+        return out;
+    }
+
+    static final String IPHONE_SAFARI = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+            + "Version/18.1 Mobile/15E148 Safari/604.1";
+
+    @Test
+    void aFirstTimeQrIsAskedForWithTheIpAndUserAgentOfThePush() throws Exception {
+        // @RequireTouchque for a user with no phone: the push request, then the first-time QR, for the same request.
+        HttpResponse<String> guarded = send("POST", "/account", Map.of(), Map.of("X-Test-User", "new-phone@acme.com", "User-Agent", IPHONE_SAFARI,
+                "X-Forwarded-For", "203.0.113.99"));
+        assertEquals(List.of(202, "enroll"), List.of(guarded.statusCode(), Json.parse(guarded.body()).get("touchque").get("state").asText()));
+        // The relay: POST /login for a user with no phone, and /enroll/start for a signed-in one (generate, then reset while that QR is up).
+        HttpResponse<String> login = send("POST", "/touchque/login", Map.of(), Map.of("X-Test-User", "relay-new@acme.com", "User-Agent", IPHONE_SAFARI));
+        assertEquals(List.of(202, "enroll"), List.of(login.statusCode(), Json.parse(login.body()).get("touchque").get("state").asText()));
+        Map<String, String> signedIn = Map.of("X-Test-Signed-In", "enroll@acme.com", "User-Agent", IPHONE_SAFARI, "X-Forwarded-For", "203.0.113.99");
+        assertEquals(200, send("POST", "/touchque/enroll/start", Map.of(), signedIn).statusCode());
+        HttpResponse<String> renewed = send("POST", "/touchque/enroll/start", Map.of(), signedIn);
+        assertEquals(List.of(200, "data:image/png;base64,QR2-enroll@acme.com"), List.of(renewed.statusCode(), Json.parse(renewed.body()).get("qrCodeDataUrl").asText()));
+        // Every one with the address the container sees (X-Forwarded-For is not trusted without server.forward-headers-strategy)
+        // and the browser's User-Agent: the same pair the push request got.
+        List<JsonNode> sent = new ArrayList<>(bodies("/login/request"));
+        sent.addAll(bodies("/auth/generate-secret"));
+        sent.addAll(bodies("/auth/secret/reset"));
+        assertEquals(2 + 4 + 1, sent.size());
+        for (JsonNode b : sent) assertEquals(List.of("127.0.0.1", IPHONE_SAFARI), List.of(b.path("clientIp").asText(), b.path("userAgent").asText()), b.toString());
+        // Not signed in: no QR.
+        assertEquals(401, send("POST", "/touchque/enroll/start", Map.of(), Map.of()).statusCode());
+    }
+
     private static String signed(ObjectNode payload) {
         payload.put("signature", Crypto.hmacHex("test_secret", Webhook.canonicalize(Json.write(payload))));
         return Json.write(payload);

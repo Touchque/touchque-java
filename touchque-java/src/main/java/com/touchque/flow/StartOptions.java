@@ -30,12 +30,13 @@ public final class StartOptions {
         return this;
     }
 
-    /** The end user's IP. */
+    /** The end user's IP: sent with the push and, for a user with no phone, with the first-time QR (the phone shows where it was asked for). */
     public StartOptions ip(String v) {
         this.ip = v;
         return this;
     }
 
+    /** The end user's User-Agent, sent like {@link #ip(String)}. */
     public StartOptions userAgent(String v) {
         this.userAgent = v;
         return this;
