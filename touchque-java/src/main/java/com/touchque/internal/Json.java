@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import java.util.LinkedHashMap;
 
 /** JSON helpers shared by the SDK. Internal API: may change without notice. */
@@ -171,6 +172,55 @@ public final class Json {
             }
         }
         return sb.append('"').toString();
+    }
+
+    /**
+     * The text with each unpaired surrogate replaced by U+FFFD, like JavaScript's
+     * {@code String.prototype.toWellFormed()}. JSON may carry a lone surrogate as an escape (JavaScript's
+     * JSON.stringify writes U+D800 alone as backslash, u, d800), and Java keeps it in a String as it is,
+     * where UTF-8 cannot encode it ({@code getBytes} writes {@code ?}). Surrogate pairs are kept.
+     */
+    public static String wellFormed(String s) {
+        if (s == null) return null;
+        StringBuilder out = null;
+        int n = s.length();
+        for (int i = 0; i < n; i++) {
+            char c = s.charAt(i);
+            if (!Character.isSurrogate(c)) {
+                if (out != null) out.append(c);
+            } else if (Character.isHighSurrogate(c) && i + 1 < n && Character.isLowSurrogate(s.charAt(i + 1))) {
+                if (out != null) out.append(c).append(s.charAt(i + 1));
+                i++;
+            } else {
+                if (out == null) out = new StringBuilder(n).append(s, 0, i);
+                out.append('\uFFFD');
+            }
+        }
+        return out == null ? s : out.toString();
+    }
+
+    /**
+     * The node with every string in it (values and keys, at any depth) {@link #wellFormed(String) well-formed}:
+     * a copy of an object or an array, the node itself otherwise when nothing changed.
+     */
+    public static JsonNode wellFormed(JsonNode node) {
+        if (node == null) return null;
+        if (node.isTextual()) {
+            String text = node.textValue();
+            String fixed = wellFormed(text);
+            return fixed.equals(text) ? node : TextNode.valueOf(fixed);
+        }
+        if (node.isArray()) {
+            ArrayNode out = array();
+            node.forEach(v -> out.add(wellFormed(v)));
+            return out;
+        }
+        if (node.isObject()) {
+            ObjectNode out = object();
+            node.fields().forEachRemaining(e -> out.set(wellFormed(e.getKey()), wellFormed(e.getValue())));
+            return out;
+        }
+        return node;
     }
 
     /**

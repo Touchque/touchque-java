@@ -2,10 +2,12 @@ package com.touchque.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.touchque.TouchqueApiException;
 import com.touchque.internal.Json;
 import com.touchque.internal.TouchqueHttp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -13,9 +15,10 @@ import java.util.Map;
 
 /**
  * Touchque Login Management API: your customers' accounts, roles, business-customer organizations,
- * apps, APIs, connections and the tenant itself, from your server with your workspace key. Bodies
- * and queries are any object (a Map, a record, a JsonNode) with the API's camelCase fields; answers
- * are the API's JSON.
+ * apps, APIs, connections, custom domains, the passkey domain, moving customers in from your own user
+ * database and the tenant itself, from your server with your workspace key. Bodies and queries are any
+ * object (a Map, a record, a JsonNode) with the API's camelCase fields; answers are the API's JSON. An
+ * error answer throws {@link com.touchque.TouchqueApiException}, with the API's code in {@code error()}.
  *
  * <pre>{@code
  * var found = tq.identity().users().list(Map.of("q", "ayse"));
@@ -32,7 +35,7 @@ public final class Identity {
     private final Clients clients;
     private final Crud apis;
     private final Crud connections;
-    private final Crud customDomains;
+    private final CustomDomains customDomains;
 
     /** Internal: use {@code tq.identity()}. */
     public Identity(TouchqueHttp http) {
@@ -45,7 +48,7 @@ public final class Identity {
         this.clients = new Clients(http);
         this.apis = new Crud(http, "/identity/apis", "apis");
         this.connections = new Crud(http, "/identity/connections", "connections");
-        this.customDomains = new Crud(http, "/identity/custom-domains", "domains");
+        this.customDomains = new CustomDomains(http);
     }
 
     public Users users() {
@@ -80,7 +83,8 @@ public final class Identity {
         return connections;
     }
 
-    public Crud customDomains() {
+    /** Your own sign-in domains (login.acme.com): list, overview, get, create, verify, make primary, delete. */
+    public CustomDomains customDomains() {
         return customDomains;
     }
 
@@ -118,6 +122,40 @@ public final class Identity {
      */
     public JsonNode setCustomDomainOnly(boolean on) {
         return http.put("/identity/tenant", Json.object().put("customDomainOnly", on));
+    }
+
+    /**
+     * The passkey domain: the relying party ID customer passkeys are made for on that domain and the hosts
+     * under it, so they keep working when sign-in moves to another host under it, and your own site there
+     * can use them. Null clears it: each host its own ({slug}.login.touchque.com or the custom domain a
+     * passkey was made on). Only a proved domain: one of your verified custom domains, or a domain above one
+     * of them that your organization verified (Organization → Domains), e.g. "acme.com" for "login.acme.com".
+     * Set it before customers make passkeys. Answers the tenant ({@code passkeyDomain}: the one in use).
+     * Refusals ({@link com.touchque.TouchqueApiException}, the code in {@code error()}, the rest in {@code body()}):
+     * <ul>
+     *   <li>400 {@code invalid_request}, {@code field} passkeyDomain: not a domain;</li>
+     *   <li>409 {@code not_your_domain}: neither a verified custom domain nor a domain above one that your
+     *       organization verified;</li>
+     *   <li>409 {@code organization_unavailable}: your organization's verified domains could not be read; try again;</li>
+     *   <li>409 {@code passkeys_exist}: the change would leave customer passkeys behind ({@code count} of them in
+     *       the body);</li>
+     *   <li>before Touchque Login is set up for the workspace: 400 {@code invalid_request} with {@code field} slug
+     *       (a tenant PUT then sets it up, and needs a slug).</li>
+     * </ul>
+     */
+    public JsonNode setPasskeyDomain(String domain) {
+        ObjectNode body = Json.object();
+        if (domain == null) body.putNull("passkeyDomain");
+        else body.put("passkeyDomain", domain);
+        return http.put("/identity/tenant", body);
+    }
+
+    /**
+     * The same as {@code customDomains().overview()} (an alias): the custom-domain list as the API answers
+     * it, {@code domains}, {@code verifiedDomains} and {@code slugPasskeys}.
+     */
+    public CustomDomainsOverview getCustomDomains() {
+        return customDomains.overview();
     }
 
     /** Checks a verified custom domain's certificate at the sign-in edge now ({@code certificate}: pending | active | error). */
@@ -167,6 +205,55 @@ public final class Identity {
     /** One test message through the provider in use. */
     public JsonNode testDelivery(String channel, String to) {
         return http.post("/identity/delivery/" + TouchqueHttp.seg(channel) + "/test", Json.object().put("to", to));
+    }
+
+    /**
+     * Moving your customers in from your own user database: {@code url}, {@code enabled}, {@code active}
+     * (asked now: enabled, with passwords on), {@code movedIn} (accounts made from it so far),
+     * {@code lastCall} ({@code at, event, ok, status, ms, error}; null before the first), {@code paused}
+     * (5 failures in a row pause it for a minute), {@code updatedAt}. 404 {@code not_enabled} without
+     * Touchque Login. Touchque POSTs JSON to the endpoint, signed like its webhooks (check each with
+     * {@code tq.webhook().verify(rawBody, xSignature)}): {@code user_store.verify_password} {email, password}
+     * at a password sign-in of an address with no account here yet (or one moved in without a password),
+     * {@code user_store.get_user} {email} at a password reset, an email code or a sign-up of an address with
+     * no account here, {@code user_store.ping} for the test. Answer within 5 seconds
+     * {@code {"user": {"id", "email", "emailVerified", "name", ...}}} or {@code {"user": null}} (a 404 too),
+     * the same for an unknown address and a wrong password.
+     */
+    public JsonNode getUserStore() {
+        return http.get("/identity/user-store");
+    }
+
+    /**
+     * Sets the endpoint and whether it is asked. A null argument is left out: the API keeps the value set
+     * (a new endpoint starts on). The url is https and a public address, with no user name or password in it
+     * (plain http only to this machine outside production: localhost, 127.0.0.1, ::1, *.localhost, *.test),
+     * else 400 {@code invalid_request} ({@code field} url). Turning it on needs passwords on (409 {@code passwords_off}).
+     */
+    public JsonNode setUserStore(String url, Boolean enabled) {
+        ObjectNode body = Json.object();
+        if (url != null) body.put("url", url);
+        if (enabled != null) body.put("enabled", enabled);
+        return http.put("/identity/user-store", body);
+    }
+
+    /**
+     * One signed {@code user_store.ping} to url, without saving it, never counted toward the pause:
+     * {@code {ok, error, ms}}. Null or empty sends {@code {}}: the ping goes to the endpoint set
+     * (400 {@code invalid_request}, {@code field} url, when none is set).
+     */
+    public JsonNode testUserStore(String url) {
+        ObjectNode body = Json.object();
+        if (url != null && !url.isEmpty()) body.put("url", url);
+        return http.post("/identity/user-store/test", body);
+    }
+
+    /**
+     * Stops asking your user database; accounts already moved in stay. 204 (an empty object), also when
+     * nothing is set; 404 {@code not_enabled} means Touchque Login is not set up.
+     */
+    public JsonNode removeUserStore() {
+        return http.delete("/identity/user-store");
     }
 
     /** A query from any object: its fields as strings (booleans lower-case), nulls left out. */
@@ -276,6 +363,80 @@ public final class Identity {
         /** A new client secret: it is in the answer ({@code clientSecret}), this once; the old one stops working. */
         public JsonNode rotateSecret(String clientId) {
             return http.post(base + "/" + TouchqueHttp.seg(clientId) + "/rotate-secret", Json.object());
+        }
+    }
+
+    /**
+     * Your own sign-in domains (login.acme.com, at most 5): proved with a DNS TXT record, or at once on a domain
+     * your organization verified (Organization → Domains), then given a certificate; the primary one is the
+     * issuer. {@code list()} returns the domains alone (an array), {@link #overview()} the whole answer. A domain:
+     * {@code id}, {@code domain}, {@code status} (pending or verified), {@code primary}, {@code proof},
+     * {@code records} (what to put in DNS), {@code certificate}, {@code dns} (what its DNS said at the last check:
+     * {@code points}, {@code cloudflareProxy}, {@code caaBlocks}, {@code problems}…) and {@code autoCheckUntil}.
+     * {@code create(Map.of("domain", "login.acme.com"))} adds one, {@code update(id, Map.of("primary", true))}
+     * makes a verified one the issuer, {@code delete(id)} removes one.
+     */
+    public static final class CustomDomains extends Crud {
+        CustomDomains(TouchqueHttp http) {
+            super(http, "/identity/custom-domains", "domains");
+        }
+
+        /**
+         * GET /identity/custom-domains as the API answers it: the domains, your organization's verified domains
+         * and the count of customer passkeys made on {slug}.login.touchque.com. {@link Identity#getCustomDomains()}
+         * is an alias of it.
+         */
+        public CustomDomainsOverview overview() {
+            return CustomDomainsOverview.of(http.get(base));
+        }
+
+        /**
+         * The domain with this id, found in {@link #list()} (the API has no call for one domain). With none, a
+         * {@link TouchqueApiException} as the API answers an unknown id: status 404, {@code error()} not_found.
+         */
+        @Override
+        public JsonNode get(String id) {
+            for (JsonNode domain : list()) {
+                if (id != null && id.equals(Json.str(domain, "id"))) return domain;
+            }
+            throw new TouchqueApiException(404, Json.object().put("error", "not_found").put("message", "No custom domain with this id"));
+        }
+
+        /**
+         * Checks the domain now (POST /identity/custom-domains/{id}/verify): its DNS TXT record until it is
+         * verified (none is needed on a domain your organization verified) and what its DNS says ({@code dns}).
+         * Answers the domain: {@code status} verified once it is proved, else {@code lastError} says why not.
+         */
+        public JsonNode verify(String id) {
+            return http.post(base + "/" + TouchqueHttp.seg(id) + "/verify", Json.object());
+        }
+    }
+
+    /**
+     * The custom-domain list as the API answers it ({@code customDomains().overview()}).
+     *
+     * @param domains         the custom domains, as {@code customDomains().list()} returns them
+     * @param verifiedDomains your organization's verified domains (Organization → Domains), on which a domain is
+     *                        verified without a TXT record and a passkey domain may be; null when they could not be read
+     * @param slugPasskeys    customer passkeys made on {slug}.login.touchque.com: they belong to that name and never
+     *                        work on a custom domain
+     */
+    public record CustomDomainsOverview(List<JsonNode> domains, List<String> verifiedDomains, int slugPasskeys) {
+        /** Reads an answer: missing domains are none, missing verifiedDomains null, a missing count 0. */
+        public static CustomDomainsOverview of(JsonNode answer) {
+            List<JsonNode> domains = new ArrayList<>();
+            Actions.field(answer, "domains").forEach(domains::add);
+            JsonNode verified = answer == null ? null : answer.get("verifiedDomains");
+            List<String> verifiedDomains = null;
+            if (verified != null && verified.isArray()) {
+                verifiedDomains = new ArrayList<>();
+                for (JsonNode d : verified) {
+                    if (d.isTextual()) verifiedDomains.add(d.textValue());
+                }
+            }
+            JsonNode count = answer == null ? null : answer.get("slugPasskeys");
+            return new CustomDomainsOverview(List.copyOf(domains), verifiedDomains == null ? null : List.copyOf(verifiedDomains),
+                    count != null && count.isNumber() && count.canConvertToInt() ? count.intValue() : 0);
         }
     }
 

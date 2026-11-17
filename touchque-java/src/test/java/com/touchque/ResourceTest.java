@@ -289,6 +289,39 @@ class ResourceTest {
     }
 
     @Test
+    void userStoreCalls() {
+        TouchqueClient tq = api.client();
+        api.reset();
+        tq.identity().getUserStore();
+        tq.identity().setUserStore("https://api.acme.test/touchque/user-store", true);
+        tq.identity().testUserStore(null);
+        tq.identity().removeUserStore();
+        List<JsonNode> calls = new ArrayList<>();
+        api.calls().forEach(c -> {
+            if (c.get("path").asText().startsWith("/identity/user-store")) calls.add(c);
+        });
+        assertEquals(List.of("GET /identity/user-store", "PUT /identity/user-store", "POST /identity/user-store/test", "DELETE /identity/user-store"),
+                calls.stream().map(c -> c.get("method").asText() + " " + c.get("url").asText()).toList());
+        assertEquals(Json.parse("{\"url\":\"https://api.acme.test/touchque/user-store\",\"enabled\":true}"), calls.get(1).get("body"));
+    }
+
+    @Test
+    void passkeyDomainCalls() {
+        TouchqueClient tq = api.client();
+        api.reset();
+        tq.identity().setPasskeyDomain("acme.com");
+        tq.identity().setPasskeyDomain(null);
+        List<JsonNode> calls = new ArrayList<>();
+        api.calls().forEach(c -> {
+            if (c.get("path").asText().equals("/identity/tenant")) calls.add(c);
+        });
+        assertEquals(2, calls.size());
+        assertEquals("PUT", calls.get(0).get("method").asText());
+        assertEquals(Json.parse("{\"passkeyDomain\":\"acme.com\"}"), calls.get(0).get("body"));
+        assertEquals(Json.parse("{\"passkeyDomain\":null}"), calls.get(1).get("body"));
+    }
+
+    @Test
     void managementApiCalls() {
         TouchqueClient tq = api.client();
         api.reset();

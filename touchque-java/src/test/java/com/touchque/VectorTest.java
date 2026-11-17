@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,10 +20,12 @@ import com.touchque.internal.Json;
 import com.touchque.internal.TouchqueHttp;
 import com.touchque.resources.Risk;
 import com.touchque.resources.Webhook;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -54,6 +57,71 @@ class VectorTest {
             ObjectNode payload = webhook.verify(body, null, 0);
             assertEquals(Json.str(v.get("payload"), "requestId"), Json.str(payload, "requestId"));
         }
+    }
+
+    /**
+     * Touchque Login's requests to a user store, recorded from the backend (fixtures/user-store-vectors.json):
+     * unpaired surrogates (JSON.stringify escapes them), U+2028/U+2029, &lt;&gt;&amp;, NUL and other control
+     * characters, quotes and backslashes verify exactly as signed, and the payload comes back with U+FFFD for
+     * each unpaired surrogate; a changed body or another secret is refused.
+     */
+    @Test
+    void userStoreVectors() {
+        ObjectNode fx = Support.fixture("user-store-vectors.json");
+        assertEquals(18, fx.get("vectors").size());
+        int valid = 0;
+        for (JsonNode v : fx.get("vectors")) {
+            String name = v.get("name").asText();
+            String body = v.get("body").asText();
+            String signature = v.get("x_signature").asText();
+            Webhook webhook = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret(v.get("secret").asText())).webhook();
+            String canonical = Webhook.canonicalize(body);
+            assertEquals(v.get("canonical").asText(), canonical, name);
+            assertEquals(v.get("valid").asBoolean(), Crypto.hmacHex(v.get("secret").asText(), canonical).equals(signature), name);
+            // The fixtures carry a fixed past timestamp: no freshness check.
+            if (!v.get("valid").asBoolean()) {
+                assertThrows(TouchqueWebhookSignatureException.class, () -> webhook.verify(body, signature, 0), name);
+                assertThrows(TouchqueWebhookSignatureException.class, () -> webhook.verify(body, null, 0), name);
+                assertTrue(v.get("expected_payload").isNull(), name);
+                continue;
+            }
+            valid++;
+            // With the x-signature header, and with the body's own signature.
+            for (String header : Arrays.asList(signature, null)) {
+                ObjectNode payload = webhook.verify(body, header, 0);
+                assertEquals(v.get("expected_payload"), payload, name);
+                payload.fields().forEachRemaining(e -> {
+                    // Every string is well-formed: UTF-8 encodes and reads back unchanged (a lone surrogate would be '?').
+                    String s = e.getValue().textValue();
+                    assertEquals(s, new String(s.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8), name + " " + e.getKey());
+                });
+            }
+            String flipped = signature.substring(0, 63) + (signature.charAt(63) == '0' ? '1' : '0');
+            assertThrows(TouchqueWebhookSignatureException.class, () -> webhook.verify(body, flipped, 0), name);
+            Webhook other = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret("another_secret")).webhook();
+            assertThrows(TouchqueWebhookSignatureException.class, () -> other.verify(body, signature, 0), name);
+        }
+        assertEquals(16, valid);
+    }
+
+    @Test
+    void webhookPayloadIsWellFormedAtEveryDepth() {
+        // Unpaired surrogates in nested values, in arrays and in keys: U+FFFD in the payload, the signature over the raw text.
+        String secret = "whsec_test";
+        String unsigned = "{\"event\":\"X\",\"nested\":{\"k\\ud800\":[\"a\\udc00\",{\"x\":\"\\ud83d\"}],\"pair\":\"\\ud83d\\ude00\"},"
+                + "\"timestamp\":\"2026-11-17T06:00:00.000Z\",\"jti\":\"j-nested\"}";
+        String raw = unsigned.substring(0, unsigned.length() - 1) + ",\"signature\":\"" + Crypto.hmacHex(secret, Webhook.canonicalize(unsigned)) + "\"}";
+        ObjectNode payload = new TouchqueClient(new TouchqueOptions().apiKey("tq_x").apiSecret(secret)).webhook().verify(raw, null, 0);
+        JsonNode nested = payload.get("nested");
+        List<String> keys = new ArrayList<>();
+        nested.fieldNames().forEachRemaining(keys::add);
+        assertEquals(List.of("k\uFFFD", "pair"), keys);
+        assertEquals("a\uFFFD", nested.get("k\uFFFD").get(0).textValue());
+        assertEquals("\uFFFD", nested.get("k\uFFFD").get(1).get("x").textValue());
+        assertEquals("\uD83D\uDE00", nested.get("pair").textValue());
+        assertEquals("a\uFFFDb\uFFFD\uD83D\uDE00\uFFFD", Json.wellFormed("a\uDC00b\uD800\uD83D\uDE00\uD83D"));
+        String clean = "no surrogates \uD83D\uDE00";
+        assertSame(clean, Json.wellFormed(clean));
     }
 
     private static String signed(String secret, ObjectNode payload) {

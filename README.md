@@ -20,15 +20,15 @@ Maven:
 <dependency>
   <groupId>com.touchque</groupId>
   <artifactId>touchque-spring-boot-starter</artifactId>   <!-- Spring Boot (brings touchque-java) -->
-  <version>5.4.0</version>
+  <version>5.5.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("com.touchque:touchque-spring-boot-starter:5.4.0")   // Spring Boot
-implementation("com.touchque:touchque-java:5.4.0")                  // anything else
+implementation("com.touchque:touchque-spring-boot-starter:5.5.0")   // Spring Boot
+implementation("com.touchque:touchque-java:5.5.0")                  // anything else
 ```
 
 ## Setup
@@ -561,8 +561,105 @@ The domain is reached over https. A plaintext `http://` domain is refused except
 
 `login.myAccount(accessToken)` is the customer's own account API: profile, sign-in methods,
 sessions, apps, data export and deletion. The Management API is `tq.identity()`: users, roles,
-organizations, apps, connections, imports and exports, attack protection, and email and SMS
-providers.
+organizations, apps, connections, imports and exports, attack protection, email and SMS
+providers, custom domains, the passkey domain and the user store. Its refusals throw
+`TouchqueApiException` with the API's code in `error()`.
+
+### Custom domains
+
+Customers can sign in on your own domain (`login.acme.com`) instead of `acme.login.touchque.com`:
+
+```java
+JsonNode d = tq.identity().customDomains().create(Map.of("domain", "login.acme.com"));   // records: the TXT and CNAME to add
+tq.identity().customDomains().verify(d.get("id").asText());   // checks the TXT record and the DNS now; answers the domain
+Identity.CustomDomainsOverview all = tq.identity().customDomains().overview();   // domains(), verifiedDomains(), slugPasskeys()
+```
+
+On a domain your organization verified (Organization → Domains), a custom domain is verified as
+it is added and needs only the CNAME. Touchque checks a new domain by itself every 5 minutes for
+72 hours (`autoCheckUntil`); `dns` is what its DNS said at the last check. `list()` returns the
+domains alone, `get(id)` one of them (404 `not_found` when there is none), and
+`update(id, Map.of("primary", true))` makes a verified one the issuer.
+`tq.identity().getCustomDomains()` is the same as `overview()`.
+
+### Passkey domain
+
+A passkey works only on the relying party ID (RP ID) it was made for. By default that is the host
+it was made on (`acme.login.touchque.com` or your custom domain), so moving sign-in to another host
+leaves your customers' passkeys behind. A passkey domain is the RP ID passkeys are made for on that
+domain and every host under it:
+
+```java
+tq.identity().setPasskeyDomain("acme.com");   // passkeys made on login.acme.com belong to acme.com; null: each host its own
+```
+
+They keep working when sign-in moves to another `acme.com` host, and your own site on `acme.com`
+can use them. Only a proved domain: one of your verified custom domains, or a domain above one of
+them that your organization verified (Organization → Domains), since a TXT record on
+`login.acme.com` proves nothing about `acme.com`. Set it before customers make passkeys: a change
+that would leave customer passkeys behind is refused with 409 `passkeys_exist` (`count` in
+`body()`). The other refusals are 400 `invalid_request` with `field` passkeyDomain (not a domain),
+409 `not_your_domain` and 409 `organization_unavailable` (try again). Before Touchque Login is set
+up for the workspace, it is 400 `invalid_request` with `field` slug. Passkeys made on
+`acme.login.touchque.com` never work on a custom domain:
+`tq.identity().customDomains().overview().slugPasskeys()` counts them.
+
+### Moving customers in from your user database
+
+Customers who are only in your own user database move in as they sign in, with no bulk import and
+no password reset. Touchque asks your endpoint about an address with no account here yet:
+
+- `user_store.verify_password` {`email`, `password`}, at a password sign-in. Answer with the user
+  when the password is right: the account is made here with that password, and Touchque never asks
+  about that customer again.
+- `user_store.get_user` {`email`}, at a password reset, an email code or a sign-up. The account is
+  made without a password (the reset or the code proves the inbox); until it has one, a password
+  sign-in still asks `verify_password`.
+- `user_store.ping`, from `testUserStore`.
+
+```java
+tq.identity().setUserStore("https://api.acme.com/touchque/user-store", true);   // null keeps what is set; a new endpoint starts on
+tq.identity().testUserStore(null);   // null or "": a signed ping to the endpoint set (or to a url you pass): {ok, error, ms}
+tq.identity().getUserStore();        // url, enabled, active, movedIn, lastCall, paused
+tq.identity().removeUserStore();     // stop asking; accounts already moved in stay
+```
+
+Each request is a POST of JSON signed like Touchque's webhooks, so `tq.webhook().verify` checks it.
+It checks the signature over the raw body, so a password verifies with any character in it, and
+hands each unpaired surrogate back as U+FFFD, so every string encodes as UTF-8. Give it its own
+route: the webhook endpoint answers `{"received":true}`, which reads as an unknown address (and
+passes the ping). Let it through Spring Security (permit the path, no CSRF token: the signature is
+its authentication), and answer within 5 seconds:
+
+```java
+@PostMapping("/touchque/user-store")
+Map<String, Object> userStore(@RequestBody String body, @RequestHeader("x-signature") String signature) {
+    ObjectNode q = tq.webhook().verify(body, signature);   // TouchqueWebhookSignatureException: not from Touchque, or too old
+    String email = q.path("email").asText();
+    Customer c = switch (q.path("event").asText()) {
+        case "user_store.verify_password" -> customers.withPassword(email, q.path("password").asText());   // null if unknown or wrong
+        case "user_store.get_user" -> customers.byEmail(email);
+        default -> null;   // user_store.ping
+    };
+    if (c == null) return Collections.singletonMap("user", null);   // unknown address or wrong password: the same answer
+    return Map.of("user", Map.of("id", c.id(), "email", email, "emailVerified", c.emailVerified()));
+}
+```
+
+`user` needs `id` (yours, a string or a number) and `email` (the address asked about), and may
+carry `emailVerified`, `name`, `givenName`, `familyName`, `nickname`, `picture` (https), `locale`,
+`phone`, `userMetadata` and `appMetadata`. A 404 counts as `{"user": null}`. Anything else (another
+status, a redirect, no answer in 5 seconds, not JSON, a user without an id or with another address)
+is never a wrong password: a password sign-in or a sign-up asks the customer to try again, a reset or
+an email code goes on as for an unknown address. Five in a row pause your endpoint for a minute
+(`paused`).
+
+The endpoint is https and a public address, with no user name or password in it (plain http only to
+this machine outside production: localhost, 127.0.0.1, ::1, `*.localhost`, `*.test`); anything else
+is 400 `invalid_request`. It is asked only while passwords are on: turning it on with
+`signInMethods.password` false is refused (409 `passwords_off`), and so is turning passwords off
+while it is on (409 `user_store_on`). `removeUserStore()` answers 204 also when nothing is set; a
+404 `not_enabled` means Touchque Login is not set up.
 
 ## Shared Signals (security events from Touchque SSO)
 

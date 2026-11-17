@@ -178,7 +178,10 @@ public final class Webhook {
 
     /**
      * Verifies an incoming webhook (signature, signed timestamp within {@code toleranceSeconds}, and
-     * with a replay cache its {@code jti}) and returns its payload.
+     * with a replay cache its {@code jti}) and returns its payload, with each unpaired surrogate as
+     * U+FFFD ({@link #verify(String, String, int)}). Touchque Login's requests to your user store
+     * ({@code user_store.verify_password}, {@code user_store.get_user}, {@code user_store.ping}) are
+     * signed the same way and checked here too.
      *
      * @param rawBody          the raw request body, exactly as received
      * @param signature        the {@code x-signature} header; null uses the {@code signature} field inside the body
@@ -203,7 +206,12 @@ public final class Webhook {
         return verify(rawBody, signature, DEFAULT_TOLERANCE_SECONDS);
     }
 
-    /** Verifies the signature and the freshness of a webhook (no replay cache) and returns its payload. */
+    /**
+     * Verifies the signature and the freshness of a webhook (no replay cache) and returns its payload.
+     * The signature is checked over the raw text, so every string verifies exactly as Touchque signed it;
+     * in the payload returned, each unpaired surrogate (JSON carries one as an escape) is U+FFFD, so
+     * every string can be encoded as UTF-8 (a password from your user store, say).
+     */
     public ObjectNode verify(String rawBody, String signature, int toleranceSeconds) {
         JsonNode parsed = Json.parse(rawBody);
         if (!(parsed instanceof ObjectNode payload)) throw new TouchqueWebhookSignatureException("invalid JSON payload");
@@ -228,7 +236,7 @@ public final class Webhook {
                 throw new TouchqueWebhookSignatureException("timestamp is outside the allowed window");
             }
         }
-        return payload;
+        return (ObjectNode) Json.wellFormed(payload);
     }
 
     /** An ISO 8601 time (with or without an offset; without one, UTC), or null. */
